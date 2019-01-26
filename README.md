@@ -8,7 +8,7 @@ Including:
 * Note volume
 * MIDI's length (read bellow)
 
-*You should expect some real corruptions on midis with length more than 2^32-1 bytes*
+*You should expect some real corruptions on midis with length more than 2^32-1 bytes.*
 You can fix it by compiling your own build were you will should replace **DWORD** with **ULI** in the line:
 `#define LTE DWORD `
 If you do that, expect a **huge** memory consuption, which is unallowable in most cases
