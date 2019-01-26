@@ -50,38 +50,6 @@ bool ShouldBReplaced(DC O, DC N){//old and new//0 - save both//1 replce O with N
 	else if(N.TrackN==O.TrackN && N.Len<O.Len)return 0;
 	return 1;
 }
-//bool operator==(DC a,DC b){//obviously best algo xd//OCRer sucks ducks
-//	if(a.Tick!=b.Tick && !(a.Key&0xFF == b.Key&0xFF))return 0;
-//	else if(a.Key<=0xFF && b.Key<=0xFF){
-//		if(a.TrackN==b.TrackN && a.Key==b.Key && a.Len==b.Len)return 1;
-//		else return 0;
-//	}else if(a.Key&0xFF00 && a.Key<0xFFFF){//a was pushed into find (Due to sequencial nature of midi, a CAN cover b)
-//		a.Key&=0xFF;b.Key&=0xFF;
-//		if(a.Key&0xFF == b.Key&0xFF){//tick and key...
-//			if(a.Len==b.Len){
-//				if(a.TrackN>=b.TrackN)return 1;
-//				else return 0;
-//			}else if(a.Len>=b.Len && a.TrackN>=b.TrackN)return 1;
-//			else return 0;
-//		}else return 0;
-//	}else if(b.Key&0xFF00 && b.Key<0xFFFF){//b was pushed into find
-//		b.Key&=0xFF;a.Key&=0xFF;
-//		if(b.Key&0xFF == a.Key&0xFF){
-//			if(b.Len==a.Len){
-//				if(b.TrackN>=a.TrackN)return 1;
-//				else return 0;
-//			}else if(b.Len>=a.Len && b.TrackN>=a.TrackN)return 1;
-//			else return 0;
-//		}else return 0;
-//	}else if(a.Key == 0xFFFF){
-//		if( a.TrackN >= b.TrackN && a.Key&0xFF == b.Key&0xFF)return 1;
-//		else return 0;
-//	}else if(b.Key==0xFFFF){
-//		if(b.TrackN >= a.TrackN && a.Key&0xFF == b.Key&0xFF)return 1;
-//		else return 0;
-//	}
-//	else return 0;
-//}
 ostream& operator<<(ostream& stream, DC a){
 	return (stream<<"K"<<(int)a.Key<<"L"<<a.Len<<"T"<<a.Tick<<"TN"<<a.TrackN);
 }
@@ -187,7 +155,7 @@ struct OverlapRemover{
 			return VLV;
 		}
 		else{
-			cout<<"Failed to read VLV at "<<fin.tellg()<<endl;
+			if(0)cout<<"Failed to read VLV at "<<fin.tellg()<<endl;//people shouldnt know about VLV being corrupted *lenny face*
 			return 0;
 		}
 	}
@@ -203,7 +171,7 @@ struct OverlapRemover{
 			PNO[pos].erase(Y);
 			return q;
 		}else{
-			cout<<"FaPO error"<<endl;
+			if(0)cout<<"FaPO error"<<endl;//not critical error
 			return CTick;
 		}
 	}
@@ -225,7 +193,7 @@ struct OverlapRemover{
 					Ev.Tick=FindAndPopOut(pos,absTick);
 					Ev.Len=absTick-Ev.Tick;
 					PushNote(Ev);
-				}else cout<<"Detected empty stack pop-attempt:"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
+				}else if(0)cout<<"Detected empty stack pop-attempt (N):"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
 			}
 			else if(IO>=0x90 && IO<=0x9F){//NOTEON
 				RSB=IO;
@@ -242,7 +210,7 @@ struct OverlapRemover{
 						Ev.Tick=FindAndPopOut(pos,absTick);
 						Ev.Len=absTick-Ev.Tick;
 						PushNote(Ev);
-					}else cout<<"Detected empty stack pop-attempt:"<<(RSB&0x0F)<<'-'<<IO<<endl;
+					}else if(0)cout<<"Detected empty stack pop-attempt (0):"<<(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
 				}
 			}
 			else if((IO>=0xA0 && IO<=0xBF) || (IO>=0xE0 && IO<=0xEF)){//stupid unusual vor visuals stuff 
@@ -301,7 +269,7 @@ struct OverlapRemover{
 						Ev.Tick=FindAndPopOut(pos,absTick);
 						Ev.Len=absTick-Ev.Tick;
 						PushNote(Ev);
-					}else cout<<"Detected empty stack pop-attempt:"<<(RSB&0x0F)<<'-'<<IO<<endl;
+					}else if(0)cout<<"Detected empty stack pop-attempt (RN):"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
 				}
 				else if(RSB>=0x90 && RSB<=0x9F){//NOTEON
 					RSB=RSB;
@@ -316,7 +284,7 @@ struct OverlapRemover{
 							Ev.Tick=FindAndPopOut(pos,absTick);
 							Ev.Len=absTick-Ev.Tick;
 							PushNote(Ev);
-						}else cout<<"Detected empty stack pop-attempt:"<<(RSB&0x0F)<<'-'<<IO<<endl;
+						}else if(0)cout<<"Detected empty stack pop-attempt (R0):"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
 					}
 				}
 				else if((RSB>=0xA0 && RSB<=0xBF) || (RSB>=0xE0 && RSB<=0xEF)){//stupid unusual for visuals stuff 
