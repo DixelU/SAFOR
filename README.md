@@ -8,8 +8,7 @@ Including:
 * Note volumes
 * MIDI's length (read bellow)
 
-***First of all. This app DISCARDS all the volumes.*** This app on first stages was called **Visual Information Collector**
-Not **Audio Information Collector**. 
+***First of all, I would notice that this app DISCARDS all the volumes.*** This app on first stages was called **Visual Information Collector**. Not **Audio Information Collector**. As i said, i've done that by this way for higher speed of convertion.
 
 *The secondary. You should expect some real corruptions on midis with length more than 2^32-1 bytes.*
 You can fix it by compiling your own build were you will should replace **DWORD** with **ULI** in the line:
