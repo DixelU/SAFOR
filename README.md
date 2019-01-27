@@ -5,10 +5,12 @@ An console application allows to create midis without any note *doubling* or *ov
 Due to the way how algorythm works, i've decided to **sacrafice everything** to keep memory usage as low as possible.
 Including: 
 * Non-noteon/noteof events and non-tempo events
-* Note volume
+* Note volumes
 * MIDI's length (read bellow)
 
-*You should expect some real corruptions on midis with length more than 2^32-1 bytes.*
+***First of all. This app DISCARDS all the volumes.*** This app on first stages was called **Visual Information Collector**
+Not **Audio Information Collector**. 
+*The secondary. You should expect some real corruptions on midis with length more than 2^32-1 bytes.*
 You can fix it by compiling your own build were you will should replace **DWORD** with **ULI** in the line:
 `#define LTE DWORD `.
 If you do that, expect a **huge** memory consuption, which is unallowable in most cases.
