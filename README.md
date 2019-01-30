@@ -16,6 +16,6 @@ You can fix it by compiling your own build were you will should replace **DWORD*
 If you do that, expect a **huge** memory consuption, which is unallowable in most cases.
 
 This app was made completely from scratch *with OOP like structure.*
-And sadly it *does* load file in memory, but every new event goes through a tons of code doing filtering and deciding what to do with this it.
+And sadly it *does* load file in memory, but every new event goes through a tons of code doing filtering and deciding what to do with this.
 
 Appreciate issue reporting :)
