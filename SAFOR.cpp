@@ -72,6 +72,7 @@ struct OverlapRemover{
 	void InitializeNPrepare(string link){
 		fin.open(link.c_str(), std::ios::binary | std::ios::in);
 		DWORD MThd;
+		//if(dbg)cout<<"Max set size:"<<SET.max_size()<<endl;
 		BYTE IO;
 		for(int i=0;i<4;i++){
 			IO=fin.get();
@@ -151,7 +152,6 @@ struct OverlapRemover{
 				B=fin.get();
 				VLV=(VLV<<7) | (B&0x7F);
 			}while(B&0x80);
-			//if(dbg)cout<<"VLV:"<<VLV<<endl;
 			return VLV;
 		}
 		else{
