@@ -16,6 +16,8 @@
 #define MTRK 1297379947
 using namespace std;
 
+#pragma pack(push, 1)
+
 bool dbg=1;
 ULI NC=0,PC=0,ONC=0;
 struct DC{//   
