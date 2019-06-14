@@ -376,13 +376,13 @@ struct OverlapRemover{
 					O.Key&=0xFF;
 					T.Tick=O.Tick;//noteon event
 					T.A=0;
-					T.B=0x90;
+					T.B=0x90 | (O.TrackN&0xF);
 					T.C=O.Key;
 					T.D=O.Vol;
 					EvTree.insert(T);
 					T.Tick+=O.Len;//note off event
-					T.B=0x80;
-					T.D=40;
+					T.B=0x80 | (O.TrackN&0xF);
+					T.D=0x40;
 					EvTree.insert(T);
 					//if(dbg)printf("F\n");
 				}
