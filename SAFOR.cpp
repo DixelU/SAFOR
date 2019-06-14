@@ -12,6 +12,7 @@
 #define TNT DWORD   //track number type
 #define KDT BYTE        //key data type
 
+#define VOLUMEMASK ((ULI)0xFFFFFFFFFFFFFF)
 #define MTHD 1297377380
 #define MTRK 1297379947
 using namespace std;
@@ -23,6 +24,7 @@ ULI NC=0,PC=0,ONC=0;
 struct DC{//   
 	LTE Tick;
 	KDT Key;//0xWWQQ ww-findable/seekable state, QQ-key itself
+	mutable BYTE Vol;
 	TNT TrackN;
 	LTE Len;
 };
@@ -45,11 +47,12 @@ bool operator<(DC a,DC b){
 	}
 	else return 0;
 }
-bool ShouldBReplaced(DC O, DC N){//old and new//0 - save both//1 replce O with N
+bool ShouldBReplaced(DC O, DC &N){//old and new//0 - save both//1 replce O with N
 	if(O.Key!=N.Key || O.Tick!=N.Tick)return 0;//
 	else if(O.Key==0xFF && N.TrackN<O.TrackN)return 0;
 	else if(N.TrackN>O.TrackN && N.Len<O.Len)return 0;
 	else if(N.TrackN==O.TrackN && N.Len<O.Len)return 0;
+	else if(O.Vol>N.Vol)N.Vol=O.Vol;
 	return 1;
 }
 ostream& operator<<(ostream& stream, DC a){
@@ -161,10 +164,10 @@ struct OverlapRemover{
 			return 0;
 		}
 	}
-	LTE FindAndPopOut(LTE pos,ULI CTick){
+	ULI FindAndPopOut(LTE pos,ULI CTick){
 		list<ULI>::iterator Y=PNO[pos].begin();
 		ULI q=PNO[pos].size();
-		while(q>0 && (*Y)==CTick){
+		while(q>0 && ((*Y)&VOLUMEMASK)==CTick){
 			Y++;
 			q--;
 		}
@@ -173,12 +176,12 @@ struct OverlapRemover{
 			PNO[pos].erase(Y);
 			return q;
 		}else{
-			if(0)cout<<"FaPO error"<<endl;//not critical error
-			return CTick;
+			if(0)cout<<"FaPO error "<<pos<<" "<<CTick<<endl;//not critical error//but still annoying
+			return CTick | (VOLUMEMASK + 1);
 		}
 	}
 	bool ParseEvent(ULI absTick){//should we continue?
-		BYTE IO,T;LTE pos;
+		BYTE IO,T;LTE pos;ULI FAPO;
 		if(!fin.bad() && !fin.eof()){
 			IO=fin.get();
 			if(IO>=0x80 && IO<=0x8F){//NOTEOFF
@@ -192,8 +195,10 @@ struct OverlapRemover{
 				Ev.Key=IO;
 				Ev.TrackN=RSB&0x0F | ((CTrack)<<4);
 				if(!PNO[pos].empty()){
-					Ev.Tick=FindAndPopOut(pos,absTick);
+					FAPO = FindAndPopOut(pos,absTick);
+					Ev.Tick = FAPO&VOLUMEMASK;
 					Ev.Len=absTick-Ev.Tick;
+					Ev.Vol = FAPO>>56;
 					PushNote(Ev);
 				}else if(0)cout<<"Detected empty stack pop-attempt (N):"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
 			}
@@ -203,17 +208,20 @@ struct OverlapRemover{
 				T=fin.get()&0x7F;
 				//if(dbg)printf("NOTEON:%x%x%x at %llu\n",RSB,IO,T,absTick);
 				pos=((RSB&0x0F)<<7)|IO;
-				if(T!=0)PNO[pos].push_front(absTick);
+				if(T!=0)PNO[pos].push_front(absTick | (((ULI)T)<<56));
 				else{//quite weird way to represent note off event...
 					DC Ev;//event push prepairings
 					Ev.Key=IO;
 					Ev.TrackN=RSB&0x0F | ((CTrack)<<4);
 					if(!PNO[pos].empty()){
-						Ev.Tick=FindAndPopOut(pos,absTick);
+						FAPO = FindAndPopOut(pos,absTick);
+						Ev.Tick = FAPO&VOLUMEMASK;
 						Ev.Len=absTick-Ev.Tick;
+						Ev.Vol = FAPO>>56;
 						PushNote(Ev);
 					}else if(0)cout<<"Detected empty stack pop-attempt (0):"<<(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
 				}
+				//cout<<PNO[pos].front()<<endl;
 			}
 			else if((IO>=0xA0 && IO<=0xBF) || (IO>=0xE0 && IO<=0xEF)){//stupid unusual vor visuals stuff 
 				RSB=IO;
@@ -268,8 +276,10 @@ struct OverlapRemover{
 					Ev.Key=IO;
 					Ev.TrackN=RSB&0x0F | ((CTrack)<<4);
 					if(!PNO[pos].empty()){
-						Ev.Tick=FindAndPopOut(pos,absTick);
+						FAPO = FindAndPopOut(pos,absTick);
+						Ev.Tick = FAPO&VOLUMEMASK;
 						Ev.Len=absTick-Ev.Tick;
+						Ev.Vol = FAPO>>56;
 						PushNote(Ev);
 					}else if(0)cout<<"Detected empty stack pop-attempt (RN):"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
 				}
@@ -277,14 +287,16 @@ struct OverlapRemover{
 					RSB=RSB;
 					T=fin.get()&0x7F;//magic finished//volume
 					pos=((RSB&0x0F)<<7)|IO;
-					if(T!=0)PNO[pos].push_front(absTick);
+					if(T!=0)PNO[pos].push_front(absTick | (((ULI)T)<<56));
 					else{//quite weird way to represent note off event...
 						DC Ev;//event push prepairings
 						Ev.Key=IO;
 						Ev.TrackN=RSB&0x0F | ((CTrack)<<4);
 						if(!PNO[pos].empty()){
-							Ev.Tick=FindAndPopOut(pos,absTick);
+							FAPO = FindAndPopOut(pos,absTick);
+							Ev.Tick = FAPO&VOLUMEMASK;
 							Ev.Len=absTick-Ev.Tick;
+							Ev.Vol = FAPO>>56;
 							PushNote(Ev);
 						}else if(0)cout<<"Detected empty stack pop-attempt (R0):"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
 					}
@@ -366,11 +378,11 @@ struct OverlapRemover{
 					T.A=0;
 					T.B=0x90;
 					T.C=O.Key;
-					T.D=5;
+					T.D=O.Vol;
 					EvTree.insert(T);
 					T.Tick+=O.Len;//note off event
 					T.B=0x80;
-					T.D=0;
+					T.D=40;
 					EvTree.insert(T);
 					//if(dbg)printf("F\n");
 				}
@@ -445,6 +457,7 @@ int main(int argc, char** argv) {
 	cout<<"Start\n";
 	OverlapRemover WRK;//это структура...
 	cout<<"WRK created\n";
+	cout<<"SAFOR. Velocity Preservation Edition.\n";
 	if(argc==2){
 		string t=argv[1];
 		WRK.Load(t);
