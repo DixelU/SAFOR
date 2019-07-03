@@ -113,7 +113,7 @@ struct OverlapRemover{
 			swap(MTrk[1],MTrk[2]);
 			swap(MTrk[2],MTrk[3]);
 			MTrk[3]=fin.get();
-			if(dbg)printf("Seeking for MTrk\n");
+			if(0)printf("Seeking for MTrk\n");///It's standart :t
 		}
 		for(int i=0;i<4 && !fin.bad();i++)fin.get();//itterating through track's lenght//because its SAF branch app :3
 		while(!fin.bad() && !fin.eof()){
@@ -128,7 +128,7 @@ struct OverlapRemover{
 		for(int i=0;i<2048;i++)N+=PNO[i].size();
 		return N;
 	}
-	void PushNote(DC Ev){//ez
+	void PushNote(DC& Ev){//ez
 		PC++;ONC++;//ShouldBReplaced
 		pair<multiset<DC>::iterator,multiset<DC>::iterator> P=SET.equal_range(Ev);
 		//if(dbg)printf("INSERTED\n");
@@ -441,7 +441,7 @@ struct OverlapRemover{
 		while(ReadSingleTrackFromCurPos()){CTrack++;cout<<NC<<":"<<PC<<":"<<ONC<<endl;}
 		fin.close();
 		if(dbg)printf("Magic finished with set size %d...\n", SET.size());
-		set<DC>::iterator Y=SET.begin();
+		multiset<DC>::iterator Y=SET.begin();
 		while(Y!=SET.end()){//bcuz i want so
 			if(TRS.find(((*Y).TrackN))==TRS.end())TRS.insert(((*Y).TrackN));
 			//cout<<(*Y).Tick<<" "<<(*Y).Len<<" "<<(*Y).TrackN<<" "<<(*Y).Key<<endl;
