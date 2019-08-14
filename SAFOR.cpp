@@ -167,10 +167,10 @@ struct OverlapRemover{
 	ULI FindAndPopOut(LTE pos,ULI CTick){
 		list<ULI>::iterator Y=PNO[pos].begin();
 		ULI q=PNO[pos].size();
-		while(q>0 && ((*Y)&VOLUMEMASK)==CTick){
+		/*while(q>0 && ((*Y)&VOLUMEMASK)==CTick){
 			Y++;
 			q--;
-		}
+		}*/
 		if(q>0){
 			q=(*Y);
 			PNO[pos].erase(Y);
