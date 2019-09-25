@@ -167,10 +167,12 @@ struct OverlapRemover{
 	ULI FindAndPopOut(LTE pos,ULI CTick){
 		list<ULI>::iterator Y=PNO[pos].begin();
 		ULI q=PNO[pos].size();
-		/*while(q>0 && ((*Y)&VOLUMEMASK)==CTick){
+		/*
+		while(q>0 && ((*Y)&VOLUMEMASK)==CTick){
 			Y++;
 			q--;
-		}*/
+		}
+		*/
 		if(q>0){
 			q=(*Y);
 			PNO[pos].erase(Y);
@@ -308,7 +310,7 @@ struct OverlapRemover{
 				else if(RSB>=0xC0 && RSB<=0xDF){
 					RSB=RSB;
 				}else{
-					cout<<"Imaprseable data... U know, it's beta setup. I'll fix it later...\n\tdebug:"<<(unsigned int)RSB<<":"<<(unsigned int)IO<<":Off(FBegin):";
+					cout<<"Imaprseable data...\n\tdebug:"<<(unsigned int)RSB<<":"<<(unsigned int)IO<<":Off(FBegin):";
 					printf("%x\n",fin.tellg());
 					BYTE I=0,II=0,III=0;
 					while(!(I==0x2F&&II==0xFF&&III==0) && !fin.eof()){
