@@ -403,7 +403,7 @@ struct OverlapRemover{
 			while(U!=EvTree.end()){
 				PT=T;
 				T=(*U);
-				DWORD tTick=T.Tick-PT.Tick,clen=0;
+				ULI tTick=T.Tick-PT.Tick,clen=0;
 				//if(dbg)printf("dtFormat... %d\n",tTick);
 				do{//delta time formatiing begins here
 					TRK.push_back(tTick&0x7F);
@@ -439,7 +439,7 @@ struct OverlapRemover{
 			TRK[5]=(sz&0xFF0000)>>16;
 			TRK[6]=(sz&0xFF00)>>8;
 			TRK[7]=(sz&0xFF);
-			copy(TRK.begin(),TRK.end(),ostream_iterator<BYTE>(fout,""));
+			copy(TRK.begin(),TRK.end(),ostream_iterator<BYTE>(fout));
 			cout<<"Track "<<TRKK<<" went to output\n";
 			TRK.clear();
 			Q++;
@@ -447,7 +447,7 @@ struct OverlapRemover{
 		TRS.clear();
 		fout.close();
 	}
-	void FindAndRemapSustains(){
+	void FindAndRemapSustains(){//doesn't work//idk why//
 		ULI Counter = 0, LatestNoteEnd=0;
 		DC ModifiedY;
 		multiset<DC>::iterator Y = SET.begin(),Lookup;
@@ -462,11 +462,11 @@ struct OverlapRemover{
 			Lookup++;
 			LatestNoteEnd=(*Y).Tick;
 			do{
-				if((*Y).Vol && (*Y).Key == (*Lookup).Key){
-					if(!YNoteStartIsMapped){
+				if((*Y).Key == (*Lookup).Key){
+					if(!YNoteStartIsMapped && (*Y).Tick != (*Lookup).Tick){
 						ModifiedY = (*Y);
 						ModifiedY.Vol=0;
-						ModifiedY.Len = (*Y).Tick-(*Lookup).Tick;
+						ModifiedY.Len = (*Lookup).Tick - (*Y).Tick;
 						SET.insert(ModifiedY);
 						YNoteStartIsMapped = true;
 					}
@@ -476,16 +476,65 @@ struct OverlapRemover{
 						ModifiedY.Len=(*Lookup).Tick - LatestNoteEnd;
 						ModifiedY.Tick=LatestNoteEnd;
 						SET.insert(ModifiedY);
-					}else if(LatestNoteEnd<(*Lookup).Tick + (*Lookup).Len){
+					}
+					if(LatestNoteEnd<(*Lookup).Tick + (*Lookup).Len){
 						LatestNoteEnd=(*Lookup).Tick + (*Lookup).Len;
 					}
 				}
 				Lookup++;
 			}while(Lookup != SET.end() && (*Lookup).Tick < (*Y).Tick + (*Y).Len);
+			if(LatestNoteEnd < (*Y).Tick + (*Y).Len){
+				ModifiedY = (*Y);
+				ModifiedY.Vol=0;
+				ModifiedY.Len = ((*Y).Tick + (*Y).Len) - LatestNoteEnd;
+				ModifiedY.Tick = LatestNoteEnd;
+				SET.insert(ModifiedY);
+			}
 			Y=SET.erase(Y);
 			Counter++;
-			if(!Counter&0xFFFFF)
-				printf("%d notes processed in sustains removing algorithm",Counter);
+			if(!(Counter&0xFFFF))
+				printf("%d notes processed in sustains removing algorithm\n",Counter);
+		}
+	}
+	void MapNotesAndReadBack(){
+		vector<DWORD> PERKEYMAP;
+		ULI T,size,LastEdge=0;
+		multiset<DC>::iterator Y=SET.begin();
+		DC ImNote;
+		ImNote.Vol=0;
+		for(int key=0;key<128;key++){
+			ImNote.Key=key;
+			while(Y!=SET.end()){
+				if((*Y).Key == key){
+					T = (*Y).Tick + (*Y).Len;
+					if(T > PERKEYMAP.size()){
+						PERKEYMAP.resize(T);
+					}
+					for(ULI tick = (*Y).Tick; tick < T;tick++)
+						PERKEYMAP[tick] = (*Y).TrackN;
+					Y = SET.erase(Y);
+				}
+				else
+					Y++;
+			}
+			T = 0;
+			LastEdge=0;
+			size = PERKEYMAP.size();
+			while(T<size){
+				LastEdge=T;
+				for(ULI i=LastEdge+1;i<size;i++){
+					if(PERKEYMAP[i]!=PERKEYMAP[i-1]){
+						ImNote.Len=i-LastEdge;
+						ImNote.Tick = LastEdge;
+						ImNote.TrackN = PERKEYMAP[i-1];
+						T = LastEdge = i;
+						SET.insert(ImNote);
+						break;
+					}
+				}
+			}
+			PERKEYMAP.clear();
+			printf("Key %d processed in sustain removing algorithm\n",key);
 		}
 	}
 	void Load(string Link){
@@ -501,7 +550,7 @@ struct OverlapRemover{
 			Y++;
 		}
 		if(dbg && RemovingSustains)printf("Notecount might increase after remapping the MIDI\n");
-		if(RemovingSustains)FindAndRemapSustains();
+		if(RemovingSustains)MapNotesAndReadBack();
 		if(dbg)printf("Prepaired for output...\n");
 		cout<<"Tracks used: "<<TRS.size()<<endl;
 		FormMIDI(Link);
@@ -512,8 +561,8 @@ int main(int argc, char** argv) {
 	cout<<"Start\n";
 	OverlapRemover WRK;//это структура...
 	cout<<"WRK created\n";
-	if(RemovingSustains)printf("SAFSOR.\n");
-	else printf("SAFOR. Velocity Preservation Edition.\n");
+	if(RemovingSustains)printf("SAFSOR. Remapping notes.\n");
+	else printf("SAFOR. VP Edition.\n");
 	if(argc==2){
 		string t=argv[1];
 		WRK.Load(t);
