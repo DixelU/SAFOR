@@ -27,7 +27,7 @@ struct DC{//
 	KDT Key;//0xWWQQ ww-findable/seekable state, QQ-key itself
 	mutable BYTE Vol;
 	TNT TrackN;
-	LTE Len;
+	DWORD Len;
 };
 struct ME{
 	LTE Tick;
