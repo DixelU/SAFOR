@@ -33,6 +33,11 @@ struct ME{
 	LTE Tick;
 	BYTE A,B,C,D;
 };
+struct DEC{
+	LTE Tick;
+	DWORD Len;
+	DWORD TrackN;
+};
 bool operator<(ME a,ME b){
 	if(a.Tick<b.Tick)return 1;
 	else return 0;
@@ -41,8 +46,15 @@ bool operator<(DC a,DC b){
 	if(a.Tick<b.Tick)return 1;
 	else if(a.Tick==b.Tick){
 		if(a.Key<b.Key)return 1;
+		else if(RemovingSustains){
+			return (a.TrackN<b.TrackN);
+		}
 		else return 0;
 	}
+	else return 0;
+}
+bool operator<(DEC a,DEC b){
+	if(a.Tick<b.Tick)return 1;
 	else return 0;
 }
 bool ShouldBReplaced(DC O, DC &N){//old and new//0 - save both//1 replce O with N
@@ -447,99 +459,65 @@ struct OverlapRemover{
 		TRS.clear();
 		fout.close();
 	}
-	void FindAndRemapSustains(){//doesn't work//idk why//
-		ULI Counter = 0, LatestNoteEnd=0;
-		DC ModifiedY;
-		multiset<DC>::iterator Y = SET.begin(),Lookup;
-		bool YNoteStartIsMapped=false;
-		while(Y != SET.end()){
-			if(!(*Y).Vol || (*Y).Key == 0xFF){
-				Y++;
-				continue;
-			}
-			YNoteStartIsMapped = false;
-			Lookup=Y;
-			Lookup++;
-			LatestNoteEnd=(*Y).Tick;
-			do{
-				if((*Y).Key == (*Lookup).Key){
-					if(!YNoteStartIsMapped && (*Y).Tick != (*Lookup).Tick){
-						ModifiedY = (*Y);
-						ModifiedY.Vol=0;
-						ModifiedY.Len = (*Lookup).Tick - (*Y).Tick;
-						SET.insert(ModifiedY);
-						YNoteStartIsMapped = true;
-					}
-					if(LatestNoteEnd<(*Lookup).Tick){
-						ModifiedY = (*Y);
-						ModifiedY.Vol=0;
-						ModifiedY.Len=(*Lookup).Tick - LatestNoteEnd;
-						ModifiedY.Tick=LatestNoteEnd;
-						SET.insert(ModifiedY);
-					}
-					if(LatestNoteEnd<(*Lookup).Tick + (*Lookup).Len){
-						LatestNoteEnd=(*Lookup).Tick + (*Lookup).Len;
-					}
-				}
-				Lookup++;
-			}while(Lookup != SET.end() && (*Lookup).Tick < (*Y).Tick + (*Y).Len);
-			if(LatestNoteEnd < (*Y).Tick + (*Y).Len){
-				ModifiedY = (*Y);
-				ModifiedY.Vol=0;
-				ModifiedY.Len = ((*Y).Tick + (*Y).Len) - LatestNoteEnd;
-				ModifiedY.Tick = LatestNoteEnd;
-				SET.insert(ModifiedY);
-			}
-			Y=SET.erase(Y);
-			Counter++;
-			if(!(Counter&0xFFFF))
-				printf("%d notes processed in sustains removing algorithm\n",Counter);
-		}
-	}
 	void MapNotesAndReadBack(){
 		vector<DWORD> PERKEYMAP;
-		ULI T,size,LastEdge=0;
-		multiset<DC>::iterator Y=SET.begin();
+		vector<DEC> KEYVEC;
 		DC ImNote;
-		ImNote.Vol=0;
+		DEC VecInsertable;
+		ULI T,size,LastEdge=0;
+		multiset<DC>::iterator Y=--SET.end();
+		if(!SET.size())return;
 		for(int key=0;key<128;key++){
 			ImNote.Key=key;
+			ImNote.Vol=0;
+			Y = SET.begin();
 			while(Y!=SET.end()){
 				if((*Y).Key == key){
-					T = (*Y).Tick + (*Y).Len;
-					if(T > PERKEYMAP.size()){
-						PERKEYMAP.resize(T);
-					}
-					for(ULI tick = (*Y).Tick; tick < T;tick++)
-						PERKEYMAP[tick] = (*Y).TrackN;
+					VecInsertable.Tick=(*Y).Tick;
+					VecInsertable.TrackN=(*Y).TrackN;
+					VecInsertable.Len=(*Y).Len;
+					KEYVEC.push_back(VecInsertable);
 					Y = SET.erase(Y);
+					continue;
 				}
-				else
+				else{
 					Y++;
+				}
 			}
+			PERKEYMAP.resize(KEYVEC.back().Tick + KEYVEC.back().Len,0);
+			for(auto it=KEYVEC.begin();it!=KEYVEC.end();it++){
+				size = (*it).Tick + (*it).Len;
+				if(size >= PERKEYMAP.size())
+					PERKEYMAP.resize(size,0);
+				PERKEYMAP[(*it).Tick] = ((*it).TrackN<<1)|1;
+				for(ULI tick=(*it).Tick + 1; tick < size;tick++)
+					PERKEYMAP[tick] = ((*it).TrackN<<1);
+			}
+			KEYVEC.clear();
 			T = 0;
 			LastEdge=0;
 			size = PERKEYMAP.size();
 			while(T<size){
 				LastEdge=T;
-				for(ULI i=LastEdge+1;i<size;i++){
-					if(PERKEYMAP[i]!=PERKEYMAP[i-1]){
-						ImNote.Len=i-LastEdge;
+				for(T++;T<size;T++){
+					if(PERKEYMAP[T]>>1 != PERKEYMAP[T-1]>>1 || PERKEYMAP[T]&1){
+						ImNote.Len=T-LastEdge;
 						ImNote.Tick = LastEdge;
-						ImNote.TrackN = PERKEYMAP[i-1];
-						T = LastEdge = i;
-						SET.insert(ImNote);
+						ImNote.TrackN = (PERKEYMAP[T-1]>>1);
+						LastEdge = T;
+						if(ImNote.TrackN)SET.insert(ImNote);
 						break;
 					}
 				}
 			}
 			PERKEYMAP.clear();
-			printf("Key %d processed in sustain removing algorithm\n",key);
+			printf("Key %d processed in sustains removing algorithm\n",key);
 		}
 	}
 	void Load(string Link){
 		InitializeNPrepare(Link);
-		printf("Notecount : Successfully pushed notes (Count) : Notecount without overlaps\n");
+		printf("Notecount : Successfully pushed notes (Count) : Notes and tempo count without overlaps\n");
+		CTrack=2;//fix//
 		while(ReadSingleTrackFromCurPos()){CTrack++;cout<<NC<<" : "<<PC<<" : "<<ONC<<endl;}
 		fin.close();
 		if(dbg)printf("Magic finished with set size %d...\n", SET.size());
@@ -561,8 +539,8 @@ int main(int argc, char** argv) {
 	cout<<"Start\n";
 	OverlapRemover WRK;//это структура...
 	cout<<"WRK created\n";
-	if(RemovingSustains)printf("SAFSOR. Remapping notes.\n");
-	else printf("SAFOR. VP Edition.\n");
+	if(RemovingSustains)printf("SAFSOR. Remapping notes. Velocity is not preserved.\n");
+	else printf("SAFOR. Velocity Edition.\n");
 	if(argc==2){
 		string t=argv[1];
 		WRK.Load(t);

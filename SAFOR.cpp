@@ -8,7 +8,7 @@
 #include <windows.h>
 
 #define ULI unsigned long long int
-#define LTE DWORD   //Least top edge//whatever we wanna to have as Tick and len...
+#define LTE ULI   //Least top edge//whatever we wanna to have as Tick and len...
 #define TNT DWORD   //track number type
 #define KDT BYTE        //key data type
 
@@ -17,6 +17,7 @@
 #define MTRK 1297379947
 using namespace std;
 
+constexpr bool RemovingSustains=0;
 #pragma pack(push, 1)
 
 bool dbg=1;
@@ -32,19 +33,28 @@ struct ME{
 	LTE Tick;
 	BYTE A,B,C,D;
 };
+struct DEC{
+	LTE Tick;
+	DWORD Len;
+	DWORD TrackN;
+};
 bool operator<(ME a,ME b){
 	if(a.Tick<b.Tick)return 1;
 	else return 0;
-}
-bool operator==(ME a,ME b){
-	return 0;
 }
 bool operator<(DC a,DC b){
 	if(a.Tick<b.Tick)return 1;
 	else if(a.Tick==b.Tick){
 		if(a.Key<b.Key)return 1;
+		else if(RemovingSustains){
+			return (a.TrackN<b.TrackN);
+		}
 		else return 0;
 	}
+	else return 0;
+}
+bool operator<(DEC a,DEC b){
+	if(a.Tick<b.Tick)return 1;
 	else return 0;
 }
 bool ShouldBReplaced(DC O, DC &N){//old and new//0 - save both//1 replce O with N
@@ -52,7 +62,14 @@ bool ShouldBReplaced(DC O, DC &N){//old and new//0 - save both//1 replce O with 
 	else if(O.Key==0xFF && N.TrackN<O.TrackN)return 0;
 	else if(N.TrackN>O.TrackN && N.Len<O.Len)return 0;
 	else if(N.TrackN==O.TrackN && N.Len<O.Len)return 0;
-	else if(O.Vol>N.Vol)N.Vol=O.Vol;
+	else if(!RemovingSustains && O.Vol>N.Vol){//N.Vol=O.Vol;
+//		if(RemovingSustains){
+//			if(N.Tick==0)N.Vol=127;
+//			else N.Vol=1;
+//		}else{
+			N.Vol=O.Vol;
+//		}
+	}
 	return 1;
 }
 ostream& operator<<(ostream& stream, DC a){
@@ -140,7 +157,8 @@ struct OverlapRemover{
 					P.first=SET.erase(P.first);
 					ONC--;
 				}
-				if(P.first!=SET.end() && P.first!=P.second && P.first!=Y)advance(P.first,1);
+				if(P.first!=SET.end() && P.first!=P.second && P.first!=Y)
+					P.first++;
 			}
 			if(ShouldBReplaced(*P.first,Ev) && P.first!=Y && P.first!=SET.end()){
 				P.first=SET.erase(P.first);
@@ -325,7 +343,6 @@ struct OverlapRemover{
 		}else return 0;
 		return 1;
 	}
-	
 	void FormMIDI(string Link){
 		vector<BYTE> TRK,TDATA;
 		multiset<ME> EvTree;
@@ -334,7 +351,7 @@ struct OverlapRemover{
 		multiset<ME>::iterator U;
 		multiset<TNT>::iterator Q=TRS.begin();
 		ofstream fout;
-		fout.open((Link+".OR.mid").c_str(),std::ios::binary | std::ios::out);
+		fout.open((Link+((RemovingSustains)?".SOR.mid":"OR.mid")).c_str(),std::ios::binary | std::ios::out);
 		if(dbg)printf("Output..\n");
 		//fout<<'M'<<'T'<<'h'<<'d'<<(BYTE)0<<(BYTE)0<<(BYTE)0<<(BYTE)6<<(BYTE)0<<(BYTE)1;//header
 		//fout<<(BYTE)((TRS.size()>>8))<<(BYTE)((TRS.size()&0xFF));//track number
@@ -362,7 +379,8 @@ struct OverlapRemover{
 			TRK.push_back(0);//aslkflkasdflksdf
 			if(dbg)printf("Track header...\nSet size: %d\n",SET.size());
 			while(Y!=SET.end()){///holdin here one track//actually we move data to some specific thinge
-				while(Y!=(--SET.end()) && (*Y).TrackN!=TRKK)advance(Y,1);
+				while(Y!=(--SET.end()) && (*Y).TrackN!=TRKK)
+					Y++;
 				if(Y==(--SET.end())&&(*Y).TrackN!=TRKK)break;
 				O=*Y;
 				if((O.Key&0xFF)==0xFF){//tempo
@@ -380,7 +398,7 @@ struct OverlapRemover{
 					T.A=0;
 					T.B=0x90 | (O.TrackN&0xF);
 					T.C=O.Key;
-					T.D=O.Vol;
+					T.D=((O.Vol)?O.Vol:1);
 					EvTree.insert(T);
 					T.Tick+=O.Len;//note off event
 					T.B=0x80 | (O.TrackN&0xF);
@@ -397,16 +415,18 @@ struct OverlapRemover{
 			while(U!=EvTree.end()){
 				PT=T;
 				T=(*U);
-				DWORD tTick=T.Tick-PT.Tick,clen=0;
+				ULI tTick=T.Tick-PT.Tick,clen=0;
 				//if(dbg)printf("dtFormat... %d\n",tTick);
 				do{//delta time formatiing begins here
-					TDATA.push_back(tTick&0x7F);
-					tTick=tTick>>7;
+					TRK.push_back(tTick&0x7F);
+					tTick>>=7;
 					clen++;
 				}while(tTick!=0);
-				for(int i=0;i<clen;i++){
-					TRK.push_back( ((i==clen-1)?0:0x80)|TDATA.back() );
-					TDATA.pop_back();
+				for (int i = 0; i < (clen >> 1); i++) {
+					swap(TRK[TRK.size() - 1 - i], TRK[TRK.size() - clen + i]);
+				}
+				for (int i = 2; i <= clen; i++) {
+					TRK[TRK.size() - i] |= 0x80;///hack (going from 2 instead of going from one)
 				}//and ends here
 				//if(dbg)printf("NoteFormat...\n");
 				if(T.A==0x03){
@@ -422,33 +442,93 @@ struct OverlapRemover{
 					TRK.push_back(T.D);
 				}
 				//if(dbg)printf("Erase...\n");
-				if(U!=EvTree.end())U=EvTree.erase(U);
+				U=EvTree.erase(U);
 			}//end of track collection data
-			//generating size of track bytes and finishing this sht.
+			//generating size of track bytes and finishing.
 			TRK.push_back(0x00);TRK.push_back(0xFF);TRK.push_back(0x2F);TRK.push_back(0x00);
 			DWORD sz = TRK.size()-8;
 			TRK[4]=(sz&0xFF000000)>>24;
 			TRK[5]=(sz&0xFF0000)>>16;
 			TRK[6]=(sz&0xFF00)>>8;
 			TRK[7]=(sz&0xFF);
-			copy(TRK.begin(),TRK.end(),ostream_iterator<BYTE>(fout,""));
+			copy(TRK.begin(),TRK.end(),ostream_iterator<BYTE>(fout));
 			cout<<"Track "<<TRKK<<" went to output\n";
-			advance(Q,1);
+			TRK.clear();
+			Q++;
 		}
 		TRS.clear();
 		fout.close();
 	}
+	void MapNotesAndReadBack(){
+		vector<DWORD> PERKEYMAP;
+		vector<DEC> KEYVEC;
+		DC ImNote;
+		DEC VecInsertable;
+		ULI T,size,LastEdge=0;
+		multiset<DC>::iterator Y=--SET.end();
+		if(!SET.size())return;
+		for(int key=0;key<128;key++){
+			ImNote.Key=key;
+			ImNote.Vol=0;
+			Y = SET.begin();
+			while(Y!=SET.end()){
+				if((*Y).Key == key){
+					VecInsertable.Tick=(*Y).Tick;
+					VecInsertable.TrackN=(*Y).TrackN;
+					VecInsertable.Len=(*Y).Len;
+					KEYVEC.push_back(VecInsertable);
+					Y = SET.erase(Y);
+					continue;
+				}
+				else{
+					Y++;
+				}
+			}
+			PERKEYMAP.resize(KEYVEC.back().Tick + KEYVEC.back().Len,0);
+			for(auto it=KEYVEC.begin();it!=KEYVEC.end();it++){
+				size = (*it).Tick + (*it).Len;
+				if(size >= PERKEYMAP.size())
+					PERKEYMAP.resize(size,0);
+				PERKEYMAP[(*it).Tick] = ((*it).TrackN<<1)|1;
+				for(ULI tick=(*it).Tick + 1; tick < size;tick++)
+					PERKEYMAP[tick] = ((*it).TrackN<<1);
+			}
+			KEYVEC.clear();
+			T = 0;
+			LastEdge=0;
+			size = PERKEYMAP.size();
+			while(T<size){
+				LastEdge=T;
+				for(T++;T<size;T++){
+					if(PERKEYMAP[T]>>1 != PERKEYMAP[T-1]>>1 || PERKEYMAP[T]&1){
+						ImNote.Len=T-LastEdge;
+						ImNote.Tick = LastEdge;
+						ImNote.TrackN = (PERKEYMAP[T-1]>>1);
+						LastEdge = T;
+						if(ImNote.TrackN)SET.insert(ImNote);
+						break;
+					}
+				}
+			}
+			PERKEYMAP.clear();
+			printf("Key %d processed in sustains removing algorithm\n",key);
+		}
+	}
 	void Load(string Link){
 		InitializeNPrepare(Link);
-		while(ReadSingleTrackFromCurPos()){CTrack++;cout<<NC<<":"<<PC<<":"<<ONC<<endl;}
+		printf("Notecount : Successfully pushed notes (Count) : Notes and tempo count without overlaps\n");
+		CTrack=2;//fix//
+		while(ReadSingleTrackFromCurPos()){CTrack++;cout<<NC<<" : "<<PC<<" : "<<ONC<<endl;}
 		fin.close();
 		if(dbg)printf("Magic finished with set size %d...\n", SET.size());
 		multiset<DC>::iterator Y=SET.begin();
 		while(Y!=SET.end()){//bcuz i want so
 			if(TRS.find(((*Y).TrackN))==TRS.end())TRS.insert(((*Y).TrackN));
 			//cout<<(*Y).Tick<<" "<<(*Y).Len<<" "<<(*Y).TrackN<<" "<<(*Y).Key<<endl;
-			advance(Y,1);
+			Y++;
 		}
+		if(dbg && RemovingSustains)printf("Notecount might increase after remapping the MIDI\n");
+		if(RemovingSustains)MapNotesAndReadBack();
 		if(dbg)printf("Prepaired for output...\n");
 		cout<<"Tracks used: "<<TRS.size()<<endl;
 		FormMIDI(Link);
@@ -459,7 +539,8 @@ int main(int argc, char** argv) {
 	cout<<"Start\n";
 	OverlapRemover WRK;//это структура...
 	cout<<"WRK created\n";
-	cout<<"SAFOR. Velocity Preservation Edition.\n";
+	if(RemovingSustains)printf("SAFSOR. Remapping notes. Velocity is not preserved.\n");
+	else printf("SAFOR. Velocity Edition.\n");
 	if(argc==2){
 		string t=argv[1];
 		WRK.Load(t);
