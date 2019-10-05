@@ -351,7 +351,7 @@ struct OverlapRemover{
 		multiset<ME>::iterator U;
 		multiset<TNT>::iterator Q=TRS.begin();
 		ofstream fout;
-		fout.open((Link+((RemovingSustains)?".SOR.mid":"OR.mid")).c_str(),std::ios::binary | std::ios::out);
+		fout.open((Link+((RemovingSustains)?".SOR.mid":".OR.mid")).c_str(),std::ios::binary | std::ios::out);
 		if(dbg)printf("Output..\n");
 		//fout<<'M'<<'T'<<'h'<<'d'<<(BYTE)0<<(BYTE)0<<(BYTE)0<<(BYTE)6<<(BYTE)0<<(BYTE)1;//header
 		//fout<<(BYTE)((TRS.size()>>8))<<(BYTE)((TRS.size()&0xFF));//track number
@@ -484,7 +484,8 @@ struct OverlapRemover{
 					Y++;
 				}
 			}
-			PERKEYMAP.resize(KEYVEC.back().Tick + KEYVEC.back().Len,0);
+			if(KEYVEC.back().Tick + KEYVEC.back().Len <= PERKEYMAP.size())
+				PERKEYMAP.resize(KEYVEC.back().Tick + KEYVEC.back().Len,0);
 			for(auto it=KEYVEC.begin();it!=KEYVEC.end();it++){
 				size = (*it).Tick + (*it).Len;
 				if(size >= PERKEYMAP.size())
