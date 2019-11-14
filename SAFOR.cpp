@@ -84,7 +84,7 @@ struct OverlapRemover{
 	DWORD CTrack;
 	multiset<DC> SET;
 	multiset<TNT> TRS;//tracks
-	map<DWORD,boost::container::flat_set<ME>> OUTPUT;
+	map<DWORD,boost::container::flat_multiset<ME>> OUTPUT;
 	list<ULI> *PNO;//first 128 is first channel, next 128 are the second... etc//quite huge boi 
 	ifstream fin;
 	OverlapRemover(){
@@ -388,9 +388,9 @@ struct OverlapRemover{
 		vector<BYTE> Track;
 		ofstream fout;
 		fout.open((Link+((RemovingSustains)?".SOR.mid":".OR.mid")).c_str(),std::ios::binary | std::ios::out);
-		map<DWORD,boost::container::flat_set<ME>>::iterator Y = OUTPUT.begin();
-		boost::container::flat_set<ME>::iterator U;
-		boost::container::flat_set<ME> *pMS;
+		map<DWORD,boost::container::flat_multiset<ME>>::iterator Y = OUTPUT.begin();
+		boost::container::flat_multiset<ME>::iterator U;
+		boost::container::flat_multiset<ME> *pMS;
 		ME Event,PrevEvent;
 		if(dbg)printf("Output..\n");
 		//fout<<'M'<<'T'<<'h'<<'d'<<(BYTE)0<<(BYTE)0<<(BYTE)0<<(BYTE)6<<(BYTE)0<<(BYTE)1;//header
