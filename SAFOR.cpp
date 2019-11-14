@@ -5,6 +5,8 @@
 #include <fstream>
 #include <iterator>
 #include <list>
+#include <map>
+#include <boost/container/flat_set.hpp>
 #include <windows.h>
 
 #define ULI unsigned long long int
@@ -17,7 +19,7 @@
 #define MTRK 1297379947
 using namespace std;
 
-constexpr bool RemovingSustains=0;
+constexpr bool RemovingSustains=1;
 #pragma pack(push, 1)
 
 bool dbg=1;
@@ -82,6 +84,7 @@ struct OverlapRemover{
 	DWORD CTrack;
 	multiset<DC> SET;
 	multiset<TNT> TRS;//tracks
+	map<DWORD,boost::container::flat_set<ME>> OUTPUT;
 	list<ULI> *PNO;//first 128 is first channel, next 128 are the second... etc//quite huge boi 
 	ifstream fin;
 	OverlapRemover(){
@@ -343,7 +346,120 @@ struct OverlapRemover{
 		}else return 0;
 		return 1;
 	}
+	void SinglePassMapFiller(){
+		cout<<"Single pass scan has started... it might take a while...\n";
+		multiset<DC>::iterator Y = SET.begin();
+		ME Event;
+		DC Note;//prev out, out
+		while(Y!=SET.end()){
+			Note = *Y;
+			if(!(Note.Key^0xFF)){
+				Event.Tick=Note.Tick;
+				Event.A=0x03;
+				Event.B=(Note.Len&0xFF0000)>>16;
+				Event.C=(Note.Len&0xFF00)>>8;
+				Event.D=(Note.Len&0xFF);
+				OUTPUT[Note.TrackN].insert(Event);
+			}else{
+				//if(dbg)printf("NOTE\t");
+				Note.Key&=0xFF;
+				Event.Tick=Note.Tick;//noteon event
+				Event.A=0;
+				Event.B=0x90 | (Note.TrackN&0xF);
+				Event.C=Note.Key;
+				Event.D=((Note.Vol)?Note.Vol:1);
+				OUTPUT[Note.TrackN].insert(Event);
+				Event.Tick+=Note.Len;//note off event
+				Event.B^= 0x10;
+				Event.D=0x40;
+				OUTPUT[Note.TrackN].insert(Event);
+				//if(dbg)printf("F\n");
+			}
+			Y = SET.erase(Y);
+		}
+		
+		SET.clear();
+		cout<<"Single pass scan has finished...\n";
+	}
 	void FormMIDI(string Link){
+		printf("Starting enhanced output algorithm\n");
+		TRS.clear();
+		SinglePassMapFiller();
+		vector<BYTE> Track;
+		ofstream fout;
+		fout.open((Link+((RemovingSustains)?".SOR.mid":".OR.mid")).c_str(),std::ios::binary | std::ios::out);
+		map<DWORD,boost::container::flat_set<ME>>::iterator Y = OUTPUT.begin();
+		boost::container::flat_set<ME>::iterator U;
+		boost::container::flat_set<ME> *pMS;
+		ME Event,PrevEvent;
+		if(dbg)printf("Output..\n");
+		//fout<<'M'<<'T'<<'h'<<'d'<<(BYTE)0<<(BYTE)0<<(BYTE)0<<(BYTE)6<<(BYTE)0<<(BYTE)1;//header
+		//fout<<(BYTE)((TRS.size()>>8))<<(BYTE)((TRS.size()&0xFF));//track number
+		//fout<<(PPQN>>8)<<(PPQN&0xFF);//ppqn
+		fout.put('M');fout.put('T');fout.put('h');fout.put('d');
+		fout.put(0);fout.put(0);fout.put(0);fout.put(6);fout.put(0);fout.put(1);
+		fout.put((char)((TRS.size()>>8)));fout.put((char)((TRS.size()&0xFF)));
+		fout.put((char)(PPQN>>8));fout.put((char)(PPQN&0xFF));
+		if(dbg)printf("Header...\n");
+		while(Y!=OUTPUT.end()){
+			Track.push_back('M');
+			Track.push_back('T');
+			Track.push_back('r');
+			Track.push_back('k');
+			Track.push_back(0);//size
+			Track.push_back(0);//of
+			Track.push_back(0);//track
+			Track.push_back(0);//aslkflkasdflksdf
+			if(dbg)printf("Track header...\nCurrent track size: %d\n",(*Y).second.size());
+			pMS = &((*Y).second);
+			U = pMS->begin();
+			Event.Tick=0;
+			if(dbg)printf("Converting back to MIDI standard\n",(*Y).second.size());
+			while(U!=pMS->end()){
+				PrevEvent = Event;
+				Event = *U;
+				DWORD tTick = Event.Tick-PrevEvent.Tick, clen=0;
+				//if(dbg)printf("dtFormat... %d\n",tTick);
+				do{//delta time formatiing begins here
+					Track.push_back(tTick&0x7F);
+					tTick>>=7;
+					clen++;
+				}while(tTick!=0);
+				for (int i = 0; i < (clen >> 1); i++) {
+					swap(Track[Track.size() - 1 - i], Track[Track.size() - clen + i]);
+				}
+				for (int i = 2; i <= clen; i++) {
+					Track[Track.size() - i] |= 0x80;///hack (going from 2 instead of going from one)
+				}
+				if(Event.A==0x03){
+					Track.push_back(0xFF);
+					Track.push_back(0x51);
+					Track.push_back(Event.A);//03
+					Track.push_back(Event.B);
+					Track.push_back(Event.C);
+					Track.push_back(Event.D);
+				}else{
+					Track.push_back(Event.B);
+					Track.push_back(Event.C);
+					Track.push_back(Event.D);
+				}
+				U++; //= pMS->erase(U);
+			}
+			pMS->clear();
+			Track.push_back(0x00);Track.push_back(0xFF);Track.push_back(0x2F);Track.push_back(0x00);
+			DWORD sz = Track.size()-8;
+			Track[4]=(sz&0xFF000000)>>24;
+			Track[5]=(sz&0xFF0000)>>16;
+			Track[6]=(sz&0xFF00)>>8;
+			Track[7]=(sz&0xFF);
+			copy(Track.begin(),Track.end(),ostream_iterator<BYTE>(fout));
+			if(dbg)printf("Track %d went to output\n",(*Y).first);
+			Track.clear();
+			Y++;
+		}
+		fout.close();
+	}
+	void __deprecated__FormMIDI(string Link){
 		vector<BYTE> TRK,TDATA;
 		multiset<ME> EvTree;
 		TNT TRKK=0;
