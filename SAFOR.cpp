@@ -383,7 +383,6 @@ struct OverlapRemover{
 	}
 	void FormMIDI(string Link){
 		printf("Starting enhanced output algorithm\n");
-		TRS.clear();
 		SinglePassMapFiller();
 		vector<BYTE> Track;
 		ofstream fout;
@@ -400,6 +399,7 @@ struct OverlapRemover{
 		fout.put(0);fout.put(0);fout.put(0);fout.put(6);fout.put(0);fout.put(1);
 		fout.put((char)((TRS.size()>>8)));fout.put((char)((TRS.size()&0xFF)));
 		fout.put((char)(PPQN>>8));fout.put((char)(PPQN&0xFF));
+		TRS.clear();
 		if(dbg)printf("Header...\n");
 		while(Y!=OUTPUT.end()){
 			Track.push_back('M');
