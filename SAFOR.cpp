@@ -9,6 +9,8 @@
 #include <boost/container/flat_set.hpp>
 #include <windows.h>
 
+#include "bbb_ffr.h"
+
 #define ULI unsigned long long int
 #define LTE ULI   //Least top edge//whatever we wanna to have as Tick and len...
 #define TNT DWORD   //track number type
@@ -86,7 +88,7 @@ struct OverlapRemover{
 	multiset<TNT> TRS;//tracks
 	map<DWORD,boost::container::flat_multiset<ME>> OUTPUT;
 	list<ULI> *PNO;//first 128 is first channel, next 128 are the second... etc//quite huge boi 
-	ifstream fin;
+	bbb_ffr *fin;
 	OverlapRemover(){
 		RSB=PPQN=CTrack=0;
 		PNO=new list<ULI>[2048];
@@ -95,28 +97,28 @@ struct OverlapRemover{
 		for(int i=0;i<2048;i++)PNO[i].clear();
 	}
 	void InitializeNPrepare(string link){
-		fin.open(link.c_str(), std::ios::binary | std::ios::in);
+		fin = new bbb_ffr(link.c_str());
 		DWORD MThd;
 		//if(dbg)cout<<"Max set size:"<<SET.max_size()<<endl;
 		BYTE IO;
 		for(int i=0;i<4;i++){
-			IO=fin.get();
+			IO=fin->get();
 			MThd= (MThd<<8) | (IO); 
 		}
 		if(MThd==MTHD){
-			fin.seekg(12);
+			(*fin).seekg(12);
 			for(int i=0;i<2;i++){
-				IO=fin.get();
+				IO=(*fin).get();
 				PPQN= (PPQN<<8) | (IO); 
 			}
-			fin.seekg(14);
+			(*fin).seekg(14);
 			SET.clear();
 			RSB=0;
 			CTrack=0;
 			if(dbg)printf("Header\n");
 		}
 		else{
-			fin.close();
+			(*fin).close();
 			cout<<"Input file doesn't begin with MThd"<<endl;
 		}
 	}
@@ -127,16 +129,17 @@ struct OverlapRemover{
 		DWORD RTick=0,RData;//real tick (which we just read rn)//read data
 		RtlZeroMemory(MTrk,4);
 		ClearPNO();
-		for(int i=0;i<4 && !fin.eof() && !fin.bad();i++)fin>>MTrk[i];
-		while(MTrk[0]!='M' && MTrk[1]!='T' && MTrk[2]!='r' && MTrk[3]!='k' && !fin.eof() && !fin.bad()){//such a hack//seeking MTrk
+		for(int i=0;i<4 && !(*fin).eof() && (*fin).good();i++)
+			MTrk[i] = (*fin).get();
+		while(MTrk[0]!='M' && MTrk[1]!='T' && MTrk[2]!='r' && MTrk[3]!='k' && !(*fin).eof() && (*fin).bad()){//such a hack//seeking MTrk
 			swap(MTrk[0],MTrk[1]);
 			swap(MTrk[1],MTrk[2]);
 			swap(MTrk[2],MTrk[3]);
-			MTrk[3]=fin.get();
+			MTrk[3]=(*fin).get();
 			if(0)printf("Seeking for MTrk\n");///It's standart :t
 		}
-		for(int i=0;i<4 && !fin.bad();i++)fin.get();//itterating through track's lenght//because its SAF branch app :3
-		while(!fin.bad() && !fin.eof()){
+		for(int i=0;i<4 && !(*fin).bad();i++)(*fin).get();//itterating through track's lenght//because its SAF branch app :3
+		while(!(*fin).bad() && !(*fin).eof()){
 			//cout<<"MP: "<<CountMomentalPolyphony()<<endl;
 			RTick=ReadVLV();
 			if(!ParseEvent(CTick+=RTick))return 1;
@@ -173,15 +176,15 @@ struct OverlapRemover{
 	DWORD ReadVLV(){//from current position
 		DWORD VLV=0;
 		BYTE B=0;
-		if(!fin.eof() && !fin.bad()){
+		if(!(*fin).eof() && !(*fin).bad()){
 			do{
-				B=fin.get();
+				B=(*fin).get();
 				VLV=(VLV<<7) | (B&0x7F);
 			}while(B&0x80);
 			return VLV;
 		}
 		else{
-			if(0)cout<<"Failed to read VLV at "<<fin.tellg()<<endl;//people shouldnt know about VLV being corrupted *lenny face*
+			if(0)cout<<"Failed to read VLV at "<<(*fin).tellg()<<endl;//people shouldnt know about VLV being corrupted *lenny face*
 			return 0;
 		}
 	}
@@ -205,14 +208,14 @@ struct OverlapRemover{
 	}
 	bool ParseEvent(ULI absTick){//should we continue?
 		BYTE IO,T;LTE pos;ULI FAPO;
-		if(!fin.bad() && !fin.eof()){
-			IO=fin.get();
+		if(!(*fin).bad() && !(*fin).eof()){
+			IO=(*fin).get();
 			if(IO>=0x80 && IO<=0x8F){//NOTEOFF
 				RSB=IO;
 				NC++;
-				IO=fin.get()&0x7F;
+				IO=(*fin).get()&0x7F;
 				pos=((RSB&0x0F)<<7)|IO;//position of stack for this key/channel pair
-				fin.get();//file thing ended
+				(*fin).get();//file thing ended
 				//if(dbg)printf("NOTEOFF:%x%x00 at %llu\n",RSB,IO,absTick);
 				DC Ev;//event push prepairings
 				Ev.Key=IO;
@@ -227,8 +230,8 @@ struct OverlapRemover{
 			}
 			else if(IO>=0x90 && IO<=0x9F){//NOTEON
 				RSB=IO;
-				IO=fin.get()&0x7F;
-				T=fin.get()&0x7F;
+				IO=(*fin).get()&0x7F;
+				T=(*fin).get()&0x7F;
 				//if(dbg)printf("NOTEON:%x%x%x at %llu\n",RSB,IO,T,absTick);
 				pos=((RSB&0x0F)<<7)|IO;
 				if(T!=0)PNO[pos].push_front(absTick | (((ULI)T)<<56));
@@ -248,34 +251,34 @@ struct OverlapRemover{
 			}
 			else if((IO>=0xA0 && IO<=0xBF) || (IO>=0xE0 && IO<=0xEF)){//stupid unusual vor visuals stuff 
 				RSB=IO;
-				fin.get();fin.get();
+				(*fin).get();(*fin).get();
 			}
 			else if(IO>=0xC0 && IO<=0xDF){
 				RSB=IO;
-				fin.get();
+				(*fin).get();
 			}
 			else if(IO>=0xF0 && IO<=0xF7){
 				RSB=0;
 				DWORD vlv=ReadVLV();
-				//fin.seekg(vlv,std::ios::cur);
-				for(int i=0;i<vlv;i++)fin.get();
+				//(*fin).seekg(vlv,std::ios::cur);
+				for(int i=0;i<vlv;i++)(*fin).get();
 			}
 			else if(IO==0xFF){
 				RSB=0;
-				IO=fin.get();
+				IO=(*fin).get();
 				DWORD vlv=0;
 				if(IO==0x2F){
 					ReadVLV();
 					return 0;
 				}
 				else if(IO==0x51){
-					fin.get();//vlv
+					(*fin).get();//vlv
 					for(int i=0;i<3;i++){//tempochange data
-						IO=fin.get();
+						IO=(*fin).get();
 						vlv=(vlv<<8)|IO;
 					}//in vlv we have tempo data :)
 					
-					//if(dbg)printf("TEMPO:%x at %x\n",vlv,fin.tellg());
+					//if(dbg)printf("TEMPO:%x at %x\n",vlv,(*fin).tellg());
 					DC Ev;//event push prepairings
 					Ev.Key=0xFF;
 					Ev.TrackN=0;
@@ -285,15 +288,15 @@ struct OverlapRemover{
 				}
 				else{
 					vlv=ReadVLV();
-					//if(dbg)printf("REGMETASIZE:%x at %x\n",vlv,fin.tellg());
-					//fin.seekg(vlv,std::ios::cur);
-					for(int i=0;i<vlv;i++)fin.get();
+					//if(dbg)printf("REGMETASIZE:%x at %x\n",vlv,(*fin).tellg());
+					//(*fin).seekg(vlv,std::ios::cur);
+					for(int i=0;i<vlv;i++)(*fin).get();
 				}
 			}else{
 				if(RSB>=0x80 && RSB<=0x8F){//NOTEOFF
 					NC++;
 					RSB=RSB;
-					fin.get();//same
+					(*fin).get();//same
 					pos=((RSB&0x0F)<<7)|IO;//position of stack for this key/channel pair
 					DC Ev;//event push prepairings
 					Ev.Key=IO;
@@ -308,7 +311,7 @@ struct OverlapRemover{
 				}
 				else if(RSB>=0x90 && RSB<=0x9F){//NOTEON
 					RSB=RSB;
-					T=fin.get()&0x7F;//magic finished//volume
+					T=(*fin).get()&0x7F;//magic finished//volume
 					pos=((RSB&0x0F)<<7)|IO;
 					if(T!=0)PNO[pos].push_front(absTick | (((ULI)T)<<56));
 					else{//quite weird way to represent note off event...
@@ -326,20 +329,20 @@ struct OverlapRemover{
 				}
 				else if((RSB>=0xA0 && RSB<=0xBF) || (RSB>=0xE0 && RSB<=0xEF)){//stupid unusual for visuals stuff 
 					RSB=RSB;
-					fin.get();
+					(*fin).get();
 				}
 				else if(RSB>=0xC0 && RSB<=0xDF){
 					RSB=RSB;
 				}else{
 					cout<<"Imaprseable data...\n\tdebug:"<<(unsigned int)RSB<<":"<<(unsigned int)IO<<":Off(FBegin):";
-					printf("%x\n",fin.tellg());
+					printf("%x\n",(*fin).tellg());
 					BYTE I=0,II=0,III=0;
-					while(!(I==0x2F&&II==0xFF&&III==0) && !fin.eof()){
+					while(!(I==0x2F&&II==0xFF&&III==0) && !(*fin).eof()){
 	                    III=II;
 	                    II=I;
-	                    I=fin.get();
+	                    I=(*fin).get();
 	                }
-	                fin.get();
+	                (*fin).get();
 	                return 0;
 				}
 			}
@@ -636,7 +639,7 @@ struct OverlapRemover{
 		printf("Notecount : Successfully pushed notes (Count) : Notes and tempo count without overlaps\n");
 		CTrack=2;//fix//
 		while(ReadSingleTrackFromCurPos()){CTrack++;cout<<NC<<" : "<<PC<<" : "<<ONC<<endl;}
-		fin.close();
+		(*fin).close();
 		if(dbg)printf("Magic finished with set size %d...\n", SET.size());
 		multiset<DC>::iterator Y=SET.begin();
 		while(Y!=SET.end()){//bcuz i want so
