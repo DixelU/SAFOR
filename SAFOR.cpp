@@ -21,7 +21,7 @@
 #define MTRK 1297379947
 using namespace std;
 
-constexpr bool RemovingSustains=1;
+constexpr bool RemovingSustains=0;
 #pragma pack(push, 1)
 
 bool dbg=1;
@@ -350,8 +350,10 @@ struct OverlapRemover{
 		return 1;
 	}
 	void SinglePassMapFiller(){
+		const ULI EDGE_LOGGER = 10000000;
 		cout<<"Single pass scan has started... it might take a while...\n";
 		multiset<DC>::iterator Y = SET.begin();
+		ULI _Counter = 0;
 		ME Event;
 		DC Note;//prev out, out
 		while(Y!=SET.end()){
@@ -377,12 +379,14 @@ struct OverlapRemover{
 				Event.D=0x40;
 				OUTPUT[Note.TrackN].insert(Event);
 				//if(dbg)printf("F\n");
+				_Counter++;
+				if(_Counter%EDGE_LOGGER == 0)
+					printf("Single pass scan: %d note\n", _Counter);
 			}
 			Y = SET.erase(Y);
 		}
-		
 		SET.clear();
-		cout<<"Single pass scan has finished...\n";
+		cout<<"Single pass scan has finished... Notecount: "<<_Counter<<endl;
 	}
 	void FormMIDI(string Link){
 		printf("Starting enhanced output algorithm\n");
