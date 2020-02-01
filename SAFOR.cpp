@@ -21,8 +21,8 @@
 #define MTRK 1297379947
 using namespace std;
 
-constexpr bool RemovingSustains=0;
-#pragma pack(push, 1)
+constexpr bool RemovingSustains=1;
+//#pragma pack(push, 1)
 
 bool dbg=1;
 ULI NC=0,PC=0,ONC=0;
@@ -92,6 +92,12 @@ struct OverlapRemover{
 	OverlapRemover(){
 		RSB=PPQN=CTrack=0;
 		PNO=new list<ULI>[2048];
+	}
+	static void ostream_write(vector<BYTE>& vec, const vector<BYTE>::iterator& beg, const vector<BYTE>::iterator& end, ostream& out) {
+		out.write(((char*)vec.data()) + (beg - vec.begin()), end - beg);
+	}
+	static void ostream_write(vector<BYTE>& vec, ostream& out) {
+		out.write(((char*)vec.data()), vec.size());;
 	}
 	void ClearPNO(){
 		for(int i=0;i<2048;i++)PNO[i].clear();
@@ -350,7 +356,7 @@ struct OverlapRemover{
 		return 1;
 	}
 	void SinglePassMapFiller(){
-		const ULI EDGE_LOGGER = 10000000;
+		const ULI EDGE_LOGGER = 5000000;
 		cout<<"Single pass scan has started... it might take a while...\n";
 		multiset<DC>::iterator Y = SET.begin();
 		ULI _Counter = 0;
@@ -459,7 +465,8 @@ struct OverlapRemover{
 			Track[5]=(sz&0xFF0000)>>16;
 			Track[6]=(sz&0xFF00)>>8;
 			Track[7]=(sz&0xFF);
-			copy(Track.begin(),Track.end(),ostream_iterator<BYTE>(fout));
+			ostream_write(Track,fout);
+			//copy(Track.begin(),Track.end(),ostream_iterator<BYTE>(fout));
 			if(dbg)printf("Track %d went to output\n",(*Y).first);
 			Track.clear();
 			Y++;
@@ -574,7 +581,8 @@ struct OverlapRemover{
 			TRK[5]=(sz&0xFF0000)>>16;
 			TRK[6]=(sz&0xFF00)>>8;
 			TRK[7]=(sz&0xFF);
-			copy(TRK.begin(),TRK.end(),ostream_iterator<BYTE>(fout));
+		//	copy(TRK.begin(),TRK.end(),ostream_iterator<BYTE>(fout));
+			ostream_write(TRK,fout);
 			cout<<"Track "<<TRKK<<" went to output\n";
 			TRK.clear();
 			Q++;

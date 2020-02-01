@@ -32,7 +32,7 @@ private:
 		return buf_ch;
 	}
 public:
-	byte_by_byte_fast_file_reader(const char* filename, int default_buffer_size = 2000000) {
+	byte_by_byte_fast_file_reader(const char* filename, int default_buffer_size = 5000000) {
 		file = fopen(filename, "rb");
 		is_open = !feof(file);
 		next_chunk_is_unavailable = is_eof = feof(file);
@@ -71,7 +71,8 @@ public:
 			return 0;
 	}
 	inline void close() {
-		fclose(file);
+		if(file)
+			fclose(file);
 		is_eof = true;
 		is_open = false;
 	}
