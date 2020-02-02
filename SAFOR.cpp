@@ -10,6 +10,7 @@
 #include <windows.h>
 
 #include "bbb_ffio.h"
+#include "allocator.h"
 
 #define ULI unsigned long long int
 #define LTE ULI   //Least top edge//whatever we wanna to have as Tick and len...
@@ -84,14 +85,14 @@ struct OverlapRemover{
 	BYTE RSB;
 	WORD PPQN;
 	DWORD CTrack;
-	multiset<DC> SET;
+	multiset<DC,less<DC>,moya_alloc::allocator<DC>> SET;
 	multiset<TNT> TRS;//tracks
 	map<DWORD,boost::container::flat_multiset<ME>> OUTPUT;
-	list<ULI> *PNO;//first 128 is first channel, next 128 are the second... etc//quite huge boi 
+	list<ULI, moya_alloc::allocator<ULI>> *PNO;//first 128 is first channel, next 128 are the second... etc//quite huge boi 
 	bbb_ffr *fin;
 	OverlapRemover(){
 		RSB=PPQN=CTrack=0;
-		PNO=new list<ULI>[2048];
+		PNO=new list<ULI, moya_alloc::allocator<ULI>>[2048];
 	}
 	static void ostream_write(vector<BYTE>& vec, const vector<BYTE>::iterator& beg, const vector<BYTE>::iterator& end, ostream& out) {
 		out.write(((char*)vec.data()) + (beg - vec.begin()), end - beg);
@@ -104,21 +105,21 @@ struct OverlapRemover{
 	}
 	void InitializeNPrepare(wstring link){
 		fin = new bbb_ffr(link.c_str());
-		//cout<<fin->eof()<<endl;
+		cout<<"File buffer size: "<<fin->tell_bufsize()<<endl;
 		DWORD MThd;
-		//if(dbg)cout<<"Max set size:"<<SET.max_size()<<endl;
 		BYTE IO;
 		for(int i=0;i<4;i++){
-			IO=fin->get();
-			MThd= (MThd<<8) | (IO); 
+			IO = fin->get();
+			MThd = (MThd<<8) | (IO); 
 		}
+		cout<<(fin->eof()?"EOF":"File opened")<<endl;
 		if(MThd==MTHD){
-			(*fin).seekg(12);
+			for(int i=0;i<8;i++)
+				fin->get();
 			for(int i=0;i<2;i++){
 				IO=(*fin).get();
 				PPQN= (PPQN<<8) | (IO); 
 			}
-			(*fin).seekg(14);
 			SET.clear();
 			RSB=0;
 			CTrack=0;
@@ -160,9 +161,9 @@ struct OverlapRemover{
 	}
 	void PushNote(DC& Ev){//ez
 		PC++;ONC++;//ShouldBReplaced
-		pair<multiset<DC>::iterator,multiset<DC>::iterator> P=SET.equal_range(Ev);
+		pair<multiset<DC,less<DC>,moya_alloc::allocator<DC>>::iterator,multiset<DC,less<DC>,moya_alloc::allocator<DC>>::iterator> P=SET.equal_range(Ev);
 		//if(dbg)printf("INSERTED\n");
-		multiset<DC>::iterator Y=(SET.size()>0)?((--SET.end())):SET.end();
+		multiset<DC,less<DC>,moya_alloc::allocator<DC>>::iterator Y=(SET.size()>0)?((--SET.end())):SET.end();
 		if(P.first!=SET.end()){
 			//cout<<ONC<<" "<<Ev<<endl;
 			while(P.first!=P.second && P.first!=Y){
@@ -196,7 +197,7 @@ struct OverlapRemover{
 		}
 	}
 	ULI FindAndPopOut(LTE pos,ULI CTick){
-		list<ULI>::iterator Y=PNO[pos].begin();
+		list<ULI, moya_alloc::allocator<ULI>>::iterator Y=PNO[pos].begin();
 		ULI q=PNO[pos].size();
 		/*
 		while(q>0 && ((*Y)&VOLUMEMASK)==CTick){
@@ -359,7 +360,7 @@ struct OverlapRemover{
 	void SinglePassMapFiller(){
 		const ULI EDGE_LOGGER = 5000000;
 		cout<<"Single pass scan has started... it might take a while...\n";
-		multiset<DC>::iterator Y = SET.begin();
+		multiset<DC,less<DC>,moya_alloc::allocator<DC>>::iterator Y = SET.begin();
 		ULI _Counter = 0;
 		ME Event;
 		DC Note;//prev out, out
@@ -480,7 +481,7 @@ struct OverlapRemover{
 		DC ImNote;
 		DEC VecInsertable;
 		ULI T,size,LastEdge=0;
-		multiset<DC>::iterator Y=--SET.end();
+		multiset<DC,less<DC>,moya_alloc::allocator<DC>>::iterator Y=--SET.end();
 		if(!SET.size())return;
 		for(int key=0;key<128;key++){
 			ImNote.Key=key;
@@ -537,7 +538,7 @@ struct OverlapRemover{
 		while(ReadSingleTrackFromCurPos()){CTrack++;cout<<NC<<" : "<<PC<<" : "<<ONC<<endl;}
 		(*fin).close();
 		if(dbg)printf("Magic finished with set size %d...\n", SET.size());
-		multiset<DC>::iterator Y=SET.begin();
+		multiset<DC,less<DC>,moya_alloc::allocator<DC>>::iterator Y=SET.begin();
 		while(Y!=SET.end()){//bcuz i want so
 			if(TRS.find(((*Y).TrackN))==TRS.end())TRS.insert(((*Y).TrackN));
 			//cout<<(*Y).Tick<<" "<<(*Y).Len<<" "<<(*Y).TrackN<<" "<<(*Y).Key<<endl;
@@ -551,12 +552,12 @@ struct OverlapRemover{
 	}
 };
 
-vector<wstring> MOFD(const wchar_t* Title) {
+wstring OFD(const wchar_t* Title) {
 	OPENFILENAMEW ofn;       // common dialog box structure
-	wchar_t szFile[50000];       // buffer for file name
+	wchar_t szFile[1000];       // buffer for file name
 	vector<wstring> InpLinks;
 	ZeroMemory(&ofn, sizeof(ofn));
-	ZeroMemory(szFile, 50000);
+	ZeroMemory(szFile, 1000);
 	ofn.lStructSize = sizeof(ofn);
 	ofn.hwndOwner = NULL;
 	ofn.lpstrFile = szFile;
@@ -568,51 +569,31 @@ vector<wstring> MOFD(const wchar_t* Title) {
 	ofn.lpstrTitle = Title;
 	ofn.nMaxFileTitle = 0;
 	ofn.lpstrInitialDir = NULL;
-	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_EXPLORER;
+	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER;
 	if (GetOpenFileNameW(&ofn)) {
-		wstring Link = L"", Gen = L"";
-		int i = 0, counter = 0;
-		for (; i < 600 && szFile[i] != '\0'; i++) {
-			Link.push_back(szFile[i]);
-		}
-		for (; i < 49998;) {
-			counter++;
-			Gen = L"";
-			for (; i < 49998 && szFile[i] != '\0'; i++) {
-				Gen.push_back(szFile[i]);
-			}
-			i++;
-			if (szFile[i] == '\0') {
-				if (counter == 1) InpLinks.push_back(Link);
-				else InpLinks.push_back(Link + L"\\" + Gen);
-				break;
-			}
-			else {
-				if (Gen != L"")InpLinks.push_back(Link + L"\\" + Gen);
-			}
-		}
-		return InpLinks;
+		return wstring(szFile);
 	}
 	else {
-		return vector<wstring>{L""};
+		return L"";
 	}
 }
 
 int main(int argc, char** argv) {
 	ofstream of;
-	cout<<"Start\n";
 	OverlapRemover WRK;//это структура...
-	cout<<"WRK created\n";
-	if(RemovingSustains)printf("SAFSOR. Remapping notes. Velocity is not preserved.\n");
-	else printf("SAFOR. Velocity Edition.\n");
-	if(argc==2){
-		string t=argv[1];
-		WRK.Load(wstring(t.begin(),t.end()));
-	}else{
-		cout<<"\"Open file\" dialog should appear soon...\n";
-		auto t = MOFD(L"abcd");
-		if(t.size())
-			WRK.Load(t.front());
+	if(RemovingSustains)
+		printf("SAFSOR. Remapping notes. Velocity is not preserved.\n");
+	else 
+		printf("SAFOR. Velocity Edition.\n");
+	cout<<"\"Open file\" dialog should appear soon...\n";
+	wstring t;
+	while((t = OFD(L"Select MIDI File.")).empty());
+	if(t.size()){
+		cout<<"Filename in ASCII: ";
+		for(auto& ch: t)
+			cout<<(char)ch;
+		cout<<endl;
+		WRK.Load(t);
 	}
 	system("pause");
 	return 0;

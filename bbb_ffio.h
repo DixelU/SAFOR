@@ -48,7 +48,7 @@ private:
 		return buf_ch;
 	}
 public:
-	byte_by_byte_fast_file_reader(const wchar_t* filename, int default_buffer_size = 20000000) {
+	byte_by_byte_fast_file_reader(const wchar_t* filename, int default_buffer_size = 10000000) {
 		_set_errno(0);
 		file = _wfopen(filename, L"rb");
 		is_open = !(errno);
@@ -104,7 +104,7 @@ public:
 		}
 		close();
 	}
-	inline void seekg(signed long long int abs_pos) {
+	inline void __seekg(signed long long int abs_pos) {
 		_fseeki64(file, file_pos = abs_pos, 0); 
 		__read_next_chunk();
 	}
@@ -135,17 +135,9 @@ public:
 	inline bool eof() const {
 		return is_eof;
 	}
+	inline signed long long int tell_bufsize(){
+		return buffer_size;
+	}
 } bbb_ffr;
-
-typedef struct byte_by_byte_fast_file_writer {
-private:
-	FILE* file;
-	unsigned char* buffer;
-	size_t buffer_size;
-	size_t inner_buffer_pos;
-	INT64 file_pos;
-public:
-	byte_by_byte_fast_file_writer();
-} bbb_ffw;
 
 #endif
