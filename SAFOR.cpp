@@ -9,7 +9,7 @@
 #include <boost/container/flat_set.hpp>
 #include <windows.h>
 
-#include "bbb_ffr.h"
+#include "bbb_ffio.h"
 
 #define ULI unsigned long long int
 #define LTE ULI   //Least top edge//whatever we wanna to have as Tick and len...
@@ -102,8 +102,9 @@ struct OverlapRemover{
 	void ClearPNO(){
 		for(int i=0;i<2048;i++)PNO[i].clear();
 	}
-	void InitializeNPrepare(string link){
+	void InitializeNPrepare(wstring link){
 		fin = new bbb_ffr(link.c_str());
+		//cout<<fin->eof()<<endl;
 		DWORD MThd;
 		//if(dbg)cout<<"Max set size:"<<SET.max_size()<<endl;
 		BYTE IO;
@@ -142,7 +143,7 @@ struct OverlapRemover{
 			swap(MTrk[1],MTrk[2]);
 			swap(MTrk[2],MTrk[3]);
 			MTrk[3]=(*fin).get();
-			if(0)printf("Seeking for MTrk\n");///It's standart :t
+			printf("Seeking for MTrk\n");///It's standart :t
 		}
 		for(int i=0;i<4 && !(*fin).bad();i++)(*fin).get();//itterating through track's lenght//because its SAF branch app :3
 		while(!(*fin).bad() && !(*fin).eof()){
@@ -394,12 +395,12 @@ struct OverlapRemover{
 		SET.clear();
 		cout<<"Single pass scan has finished... Notecount: "<<_Counter<<endl;
 	}
-	void FormMIDI(string Link){
+	void FormMIDI(wstring Link){
 		printf("Starting enhanced output algorithm\n");
 		SinglePassMapFiller();
 		vector<BYTE> Track;
-		ofstream fout;
-		fout.open((Link+((RemovingSustains)?".SOR.mid":".OR.mid")).c_str(),std::ios::binary | std::ios::out);
+		auto pfstr = open_wide_stream<std::ostream>((Link+((RemovingSustains)?L".SOR.mid":L".OR.mid")),L"wb");\
+		ostream& fout = *pfstr;
 		map<DWORD,boost::container::flat_multiset<ME>>::iterator Y = OUTPUT.begin();
 		boost::container::flat_multiset<ME>::iterator U;
 		boost::container::flat_multiset<ME> *pMS;
@@ -471,124 +472,7 @@ struct OverlapRemover{
 			Track.clear();
 			Y++;
 		}
-		fout.close();
-	}
-	void __deprecated__FormMIDI(string Link){
-		vector<BYTE> TRK,TDATA;
-		multiset<ME> EvTree;
-		TNT TRKK=0;
-		multiset<DC>::iterator Y;
-		multiset<ME>::iterator U;
-		multiset<TNT>::iterator Q=TRS.begin();
-		ofstream fout;
-		fout.open((Link+((RemovingSustains)?".SOR.mid":".OR.mid")).c_str(),std::ios::binary | std::ios::out);
-		if(dbg)printf("Output..\n");
-		//fout<<'M'<<'T'<<'h'<<'d'<<(BYTE)0<<(BYTE)0<<(BYTE)0<<(BYTE)6<<(BYTE)0<<(BYTE)1;//header
-		//fout<<(BYTE)((TRS.size()>>8))<<(BYTE)((TRS.size()&0xFF));//track number
-		//fout<<(PPQN>>8)<<(PPQN&0xFF);//ppqn
-		fout.put('M');fout.put('T');fout.put('h');fout.put('d');
-		fout.put(0);fout.put(0);fout.put(0);fout.put(6);fout.put(0);fout.put(1);
-		fout.put((char)((TRS.size()>>8)));fout.put((char)((TRS.size()&0xFF)));
-		fout.put((char)(PPQN>>8));fout.put((char)(PPQN&0xFF));
-		if(dbg)printf("Header...\n");
-		while(SET.size()>0){
-			DC O;//prev out, out
-			ME T,PT;
-			PT.Tick=PT.A=PT.B=PT.C=PT.D=0;
-			TRKK=(*Q);
-			TRK.clear();
-			EvTree.clear();
-			Y=SET.begin();
-			TRK.push_back('M');
-			TRK.push_back('T');
-			TRK.push_back('r');
-			TRK.push_back('k');
-			TRK.push_back(0);//size
-			TRK.push_back(0);//of
-			TRK.push_back(0);//track
-			TRK.push_back(0);//aslkflkasdflksdf
-			if(dbg)printf("Track header...\nSet size: %d\n",SET.size());
-			while(Y!=SET.end()){///holdin here one track//actually we move data to some specific thinge
-				while(Y!=(--SET.end()) && (*Y).TrackN!=TRKK)
-					Y++;
-				if(Y==(--SET.end())&&(*Y).TrackN!=TRKK)break;
-				O=*Y;
-				if((O.Key&0xFF)==0xFF){//tempo
-					//if(dbg)printf("TEMPO\n");
-					T.Tick=O.Tick;
-					T.A=0x03;
-					T.B=(O.Len&0xFF0000)>>16;
-					T.C=(O.Len&0xFF00)>>8;
-					T.D=(O.Len&0xFF);
-					EvTree.insert(T);
-				}else{
-					//if(dbg)printf("NOTE\t");
-					O.Key&=0xFF;
-					T.Tick=O.Tick;//noteon event
-					T.A=0;
-					T.B=0x90 | (O.TrackN&0xF);
-					T.C=O.Key;
-					T.D=((O.Vol)?O.Vol:1);
-					EvTree.insert(T);
-					T.Tick+=O.Len;//note off event
-					T.B=0x80 | (O.TrackN&0xF);
-					T.D=0x40;
-					EvTree.insert(T);
-					//if(dbg)printf("F\n");
-				}
-				Y=SET.erase(Y);
-				//if(Y!=SET.end())advance(Y,1);
-			}
-			if(dbg)printf("Converting back to midi standart...\n");
-			U=EvTree.begin();
-			T.Tick=0;
-			while(U!=EvTree.end()){
-				PT=T;
-				T=(*U);
-				ULI tTick=T.Tick-PT.Tick,clen=0;
-				//if(dbg)printf("dtFormat... %d\n",tTick);
-				do{//delta time formatiing begins here
-					TRK.push_back(tTick&0x7F);
-					tTick>>=7;
-					clen++;
-				}while(tTick!=0);
-				for (int i = 0; i < (clen >> 1); i++) {
-					swap(TRK[TRK.size() - 1 - i], TRK[TRK.size() - clen + i]);
-				}
-				for (int i = 2; i <= clen; i++) {
-					TRK[TRK.size() - i] |= 0x80;///hack (going from 2 instead of going from one)
-				}//and ends here
-				//if(dbg)printf("NoteFormat...\n");
-				if(T.A==0x03){
-					TRK.push_back(0xFF);
-					TRK.push_back(0x51);
-					TRK.push_back(T.A);//03
-					TRK.push_back(T.B);
-					TRK.push_back(T.C);
-					TRK.push_back(T.D);
-				}else{
-					TRK.push_back(T.B);
-					TRK.push_back(T.C);
-					TRK.push_back(T.D);
-				}
-				//if(dbg)printf("Erase...\n");
-				U=EvTree.erase(U);
-			}//end of track collection data
-			//generating size of track bytes and finishing.
-			TRK.push_back(0x00);TRK.push_back(0xFF);TRK.push_back(0x2F);TRK.push_back(0x00);
-			DWORD sz = TRK.size()-8;
-			TRK[4]=(sz&0xFF000000)>>24;
-			TRK[5]=(sz&0xFF0000)>>16;
-			TRK[6]=(sz&0xFF00)>>8;
-			TRK[7]=(sz&0xFF);
-		//	copy(TRK.begin(),TRK.end(),ostream_iterator<BYTE>(fout));
-			ostream_write(TRK,fout);
-			cout<<"Track "<<TRKK<<" went to output\n";
-			TRK.clear();
-			Q++;
-		}
-		TRS.clear();
-		fout.close();
+		//fout.close();
 	}
 	void MapNotesAndReadBack(){
 		vector<DWORD> PERKEYMAP;
@@ -646,7 +530,7 @@ struct OverlapRemover{
 			printf("Key %d processed in sustains removing algorithm\n",key);
 		}
 	}
-	void Load(string Link){
+	void Load(wstring Link){
 		InitializeNPrepare(Link);
 		printf("Notecount : Successfully pushed notes (Count) : Notes and tempo count without overlaps\n");
 		CTrack=2;//fix//
@@ -667,7 +551,55 @@ struct OverlapRemover{
 	}
 };
 
+vector<wstring> MOFD(const wchar_t* Title) {
+	OPENFILENAMEW ofn;       // common dialog box structure
+	wchar_t szFile[50000];       // buffer for file name
+	vector<wstring> InpLinks;
+	ZeroMemory(&ofn, sizeof(ofn));
+	ZeroMemory(szFile, 50000);
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = NULL;
+	ofn.lpstrFile = szFile;
+	ofn.lpstrFile[0] = '\0';
+	ofn.nMaxFile = sizeof(szFile);
+	ofn.lpstrFilter = L"MIDI Files(*.mid)\0*.mid\0";
+	ofn.nFilterIndex = 1;
+	ofn.lpstrFileTitle = NULL;
+	ofn.lpstrTitle = Title;
+	ofn.nMaxFileTitle = 0;
+	ofn.lpstrInitialDir = NULL;
+	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_EXPLORER;
+	if (GetOpenFileNameW(&ofn)) {
+		wstring Link = L"", Gen = L"";
+		int i = 0, counter = 0;
+		for (; i < 600 && szFile[i] != '\0'; i++) {
+			Link.push_back(szFile[i]);
+		}
+		for (; i < 49998;) {
+			counter++;
+			Gen = L"";
+			for (; i < 49998 && szFile[i] != '\0'; i++) {
+				Gen.push_back(szFile[i]);
+			}
+			i++;
+			if (szFile[i] == '\0') {
+				if (counter == 1) InpLinks.push_back(Link);
+				else InpLinks.push_back(Link + L"\\" + Gen);
+				break;
+			}
+			else {
+				if (Gen != L"")InpLinks.push_back(Link + L"\\" + Gen);
+			}
+		}
+		return InpLinks;
+	}
+	else {
+		return vector<wstring>{L""};
+	}
+}
+
 int main(int argc, char** argv) {
+	ofstream of;
 	cout<<"Start\n";
 	OverlapRemover WRK;//это структура...
 	cout<<"WRK created\n";
@@ -675,35 +607,12 @@ int main(int argc, char** argv) {
 	else printf("SAFOR. Velocity Edition.\n");
 	if(argc==2){
 		string t=argv[1];
-		WRK.Load(t);
+		WRK.Load(wstring(t.begin(),t.end()));
 	}else{
 		cout<<"\"Open file\" dialog should appear soon...\n";
-		OPENFILENAME ofn;       // common dialog box structure
-        char szFile[1000];       // buffer for file name
-        HWND hwnd;              // owner window
-        HANDLE hf;              // file handle
-
-        // Initialize OPENFILENAME
-        ZeroMemory(&ofn, sizeof(ofn));
-        ofn.lStructSize = sizeof(ofn);
-        ofn.hwndOwner = NULL;
-        ofn.lpstrFile = szFile;
-        // Set lpstrFile[0] to '\0' so that GetOpenFileName does not 
-        // use the contents of szFile to initialize itself.
-        ofn.lpstrFile[0] = '\0';
-        ofn.nMaxFile = sizeof(szFile);
-        ofn.lpstrFilter = "MIDI Files(*.mid)\0*.mid\0";
-        ofn.nFilterIndex = 1;
-        ofn.lpstrFileTitle = NULL;
-        ofn.nMaxFileTitle = 0;
-        ofn.lpstrInitialDir = NULL;
-        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-		while(!GetOpenFileName(&ofn));
-    	string t="";
-    	for(int i=0;i<1000&&szFile[i]!='\0';i++){
-    		t.push_back(szFile[i]);
-		}
-		WRK.Load(t);
+		auto t = MOFD(L"abcd");
+		if(t.size())
+			WRK.Load(t.front());
 	}
 	system("pause");
 	return 0;
