@@ -7,10 +7,12 @@
 #include <list>
 #include <map>
 #include <boost/container/flat_set.hpp>
+#include <boost/container/set.hpp>
 #include <windows.h>
 
 #include "bbb_ffio.h"
 #include "allocator.h"
+
 
 #define ULI unsigned long long int
 #define LTE ULI   //Least top edge//whatever we wanna to have as Tick and len...
@@ -22,7 +24,7 @@
 #define MTRK 1297379947
 using namespace std;
 
-constexpr bool RemovingSustains=1;
+constexpr bool RemovingSustains=0;
 //#pragma pack(push, 1)
 
 bool dbg=1;
@@ -85,8 +87,8 @@ struct OverlapRemover{
 	BYTE RSB;
 	WORD PPQN;
 	DWORD CTrack;
-	multiset<DC,less<DC>,moya_alloc::allocator<DC>> SET;
-	multiset<TNT> TRS;//tracks
+	boost::container::multiset<DC> SET;
+	boost::container::multiset<TNT> TRS;//tracks
 	map<DWORD,boost::container::flat_multiset<ME>> OUTPUT;
 	list<ULI, moya_alloc::allocator<ULI>> *PNO;//first 128 is first channel, next 128 are the second... etc//quite huge boi 
 	bbb_ffr *fin;
@@ -161,9 +163,9 @@ struct OverlapRemover{
 	}
 	void PushNote(DC& Ev){//ez
 		PC++;ONC++;//ShouldBReplaced
-		pair<multiset<DC,less<DC>,moya_alloc::allocator<DC>>::iterator,multiset<DC,less<DC>,moya_alloc::allocator<DC>>::iterator> P=SET.equal_range(Ev);
+		auto P=SET.equal_range(Ev);
 		//if(dbg)printf("INSERTED\n");
-		multiset<DC,less<DC>,moya_alloc::allocator<DC>>::iterator Y=(SET.size()>0)?((--SET.end())):SET.end();
+		auto Y=(SET.size()>0)?((--SET.end())):SET.end();
 		if(P.first!=SET.end()){
 			//cout<<ONC<<" "<<Ev<<endl;
 			while(P.first!=P.second && P.first!=Y){
@@ -197,7 +199,7 @@ struct OverlapRemover{
 		}
 	}
 	ULI FindAndPopOut(LTE pos,ULI CTick){
-		list<ULI, moya_alloc::allocator<ULI>>::iterator Y=PNO[pos].begin();
+		auto Y=PNO[pos].begin();
 		ULI q=PNO[pos].size();
 		/*
 		while(q>0 && ((*Y)&VOLUMEMASK)==CTick){
@@ -360,7 +362,7 @@ struct OverlapRemover{
 	void SinglePassMapFiller(){
 		const ULI EDGE_LOGGER = 5000000;
 		cout<<"Single pass scan has started... it might take a while...\n";
-		multiset<DC,less<DC>,moya_alloc::allocator<DC>>::iterator Y = SET.begin();
+		auto Y = SET.begin();
 		ULI _Counter = 0;
 		ME Event;
 		DC Note;//prev out, out
@@ -402,7 +404,7 @@ struct OverlapRemover{
 		vector<BYTE> Track;
 		auto pfstr = open_wide_stream<std::ostream>((Link+((RemovingSustains)?L".SOR.mid":L".OR.mid")),L"wb");\
 		ostream& fout = *pfstr;
-		map<DWORD,boost::container::flat_multiset<ME>>::iterator Y = OUTPUT.begin();
+		auto Y = OUTPUT.begin();
 		boost::container::flat_multiset<ME>::iterator U;
 		boost::container::flat_multiset<ME> *pMS;
 		ME Event,PrevEvent;
@@ -481,7 +483,7 @@ struct OverlapRemover{
 		DC ImNote;
 		DEC VecInsertable;
 		ULI T,size,LastEdge=0;
-		multiset<DC,less<DC>,moya_alloc::allocator<DC>>::iterator Y=--SET.end();
+		auto Y=--SET.end();
 		if(!SET.size())return;
 		for(int key=0;key<128;key++){
 			ImNote.Key=key;
@@ -538,7 +540,7 @@ struct OverlapRemover{
 		while(ReadSingleTrackFromCurPos()){CTrack++;cout<<NC<<" : "<<PC<<" : "<<ONC<<endl;}
 		(*fin).close();
 		if(dbg)printf("Magic finished with set size %d...\n", SET.size());
-		multiset<DC,less<DC>,moya_alloc::allocator<DC>>::iterator Y=SET.begin();
+		auto Y=SET.begin();
 		while(Y!=SET.end()){//bcuz i want so
 			if(TRS.find(((*Y).TrackN))==TRS.end())TRS.insert(((*Y).TrackN));
 			//cout<<(*Y).Tick<<" "<<(*Y).Len<<" "<<(*Y).TrackN<<" "<<(*Y).Key<<endl;
