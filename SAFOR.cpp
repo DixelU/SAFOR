@@ -7,12 +7,15 @@
 #include <list>
 #include <map>
 #include <boost/container/flat_set.hpp>
-#include <boost/container/set.hpp>
 #include <windows.h>
+#include <thread>
 
 #include "bbb_ffio.h"
 #include "allocator.h"
 
+#include "btree/btree.h"
+#include "btree/btree_set.h"
+#include "btree/btree_map.h"
 
 #define ULI unsigned long long int
 #define LTE ULI   //Least top edge//whatever we wanna to have as Tick and len...
@@ -24,8 +27,8 @@
 #define MTRK 1297379947
 using namespace std;
 
-constexpr bool RemovingSustains=0;
-//#pragma pack(push, 1)
+constexpr bool RemovingSustains=1;
+#pragma pack(push, 1)
 
 bool dbg=1;
 ULI NC=0,PC=0,ONC=0;
@@ -45,26 +48,26 @@ struct DEC{
 	DWORD Len;
 	DWORD TrackN;
 };
-bool operator<(ME a,ME b){
+bool operator<(const ME &a,const ME &b){
 	if(a.Tick<b.Tick)return 1;
 	else return 0;
 }
-bool operator<(DC a,DC b){
+bool operator<(const DC &a, const DC &b){
 	if(a.Tick<b.Tick)return 1;
 	else if(a.Tick==b.Tick){
 		if(a.Key<b.Key)return 1;
-		else if(RemovingSustains){
-			return (a.TrackN<b.TrackN);
+		else if(RemovingSustains && a.Key==b.Key){
+			return (a.TrackN < b.TrackN);
 		}
 		else return 0;
 	}
 	else return 0;
 }
-bool operator<(DEC a,DEC b){
+bool operator<(const DEC &a,const DEC &b){
 	if(a.Tick<b.Tick)return 1;
 	else return 0;
 }
-bool ShouldBReplaced(DC O, DC &N){//old and new//0 - save both//1 replce O with N
+bool ShouldBReplaced(const DC &O, DC &N){//old and new//0 - save both//1 replce O with N
 	if(O.Key!=N.Key || O.Tick!=N.Tick)return 0;//
 	else if(O.Key==0xFF && N.TrackN<O.TrackN)return 0;
 	else if(N.TrackN>O.TrackN && N.Len<O.Len)return 0;
@@ -79,7 +82,7 @@ bool ShouldBReplaced(DC O, DC &N){//old and new//0 - save both//1 replce O with 
 	}
 	return 1;
 }
-ostream& operator<<(ostream& stream, DC a){
+ostream& operator<<(ostream& stream, const DC &a){
 	return (stream<<"K"<<(int)a.Key<<"L"<<a.Len<<"T"<<a.Tick<<"TN"<<a.TrackN);
 }
 
@@ -87,14 +90,16 @@ struct OverlapRemover{
 	BYTE RSB;
 	WORD PPQN;
 	DWORD CTrack;
-	boost::container::multiset<DC> SET;
-	boost::container::multiset<TNT> TRS;//tracks
-	map<DWORD,boost::container::flat_multiset<ME>> OUTPUT;
-	list<ULI, moya_alloc::allocator<ULI>> *PNO;//first 128 is first channel, next 128 are the second... etc//quite huge boi 
+	btree::btree_multiset<DC> SET;
+	btree::btree_multiset<TNT> TRS;
+	btree::btree_map<DWORD,btree::btree_multiset<ME>> OUTPUT;
+	//multiset<DC,less<DC>,moya_alloc::allocator<DC,100000>> SET;
+	//multiset<TNT> TRS;//tracks
+	//map<DWORD,boost::container::flat_multiset<ME>> OUTPUT;
+	std::array<std::deque<ULI>,2048> PNO;//first 128 is first channel, next 128 are the second... etc//quite huge boi 
 	bbb_ffr *fin;
 	OverlapRemover(){
 		RSB=PPQN=CTrack=0;
-		PNO=new list<ULI, moya_alloc::allocator<ULI>>[2048];
 	}
 	static void ostream_write(vector<BYTE>& vec, const vector<BYTE>::iterator& beg, const vector<BYTE>::iterator& end, ostream& out) {
 		out.write(((char*)vec.data()) + (beg - vec.begin()), end - beg);
@@ -103,7 +108,8 @@ struct OverlapRemover{
 		out.write(((char*)vec.data()), vec.size());;
 	}
 	void ClearPNO(){
-		for(int i=0;i<2048;i++)PNO[i].clear();
+		for(int i=0;i<2048;i++)
+			PNO[i].clear();
 	}
 	void InitializeNPrepare(wstring link){
 		fin = new bbb_ffr(link.c_str());
@@ -158,30 +164,27 @@ struct OverlapRemover{
 	}
 	DWORD CountMomentalPolyphony(){//debug purposes
 		DWORD N=0;
-		for(int i=0;i<2048;i++)N+=PNO[i].size();
+		for(int i=0;i<2048;i++)
+			N+=PNO[i].size();
 		return N;
 	}
 	void PushNote(DC& Ev){//ez
 		PC++;ONC++;//ShouldBReplaced
-		auto P=SET.equal_range(Ev);
-		//if(dbg)printf("INSERTED\n");
-		auto Y=(SET.size()>0)?((--SET.end())):SET.end();
-		if(P.first!=SET.end()){
-			//cout<<ONC<<" "<<Ev<<endl;
-			while(P.first!=P.second && P.first!=Y){
-				if(ShouldBReplaced(*P.first,Ev)){
-					P.first=SET.erase(P.first);
+		auto e_pair=SET.equal_range(Ev);
+		if(SET.size() && e_pair.first!=SET.end()){
+			auto current_p = e_pair.first;
+			auto rightmost = *(--e_pair.second);
+			while(current_p != SET.end() && (!(*current_p < rightmost) && !(rightmost < *current_p))){
+				if(ShouldBReplaced(*current_p,Ev)){
+					current_p=SET.erase(current_p);
 					ONC--;
 				}
-				if(P.first!=SET.end() && P.first!=P.second && P.first!=Y)
-					P.first++;
-			}
-			if(ShouldBReplaced(*P.first,Ev) && P.first!=Y && P.first!=SET.end()){
-				P.first=SET.erase(P.first);
-				ONC--;
+				else 
+					current_p++;
 			}
 		}
 		SET.insert(Ev);
+		//if(dbg)printf("INSERTED\n");
 	}
 	DWORD ReadVLV(){//from current position
 		DWORD VLV=0;
@@ -199,17 +202,10 @@ struct OverlapRemover{
 		}
 	}
 	ULI FindAndPopOut(LTE pos,ULI CTick){
-		auto Y=PNO[pos].begin();
 		ULI q=PNO[pos].size();
-		/*
-		while(q>0 && ((*Y)&VOLUMEMASK)==CTick){
-			Y++;
-			q--;
-		}
-		*/
 		if(q>0){
-			q=(*Y);
-			PNO[pos].erase(Y);
+			q=(PNO[pos].front());
+			PNO[pos].pop_front();
 			return q;
 		}else{
 			if(0)cout<<"FaPO error "<<pos<<" "<<CTick<<endl;//not critical error//but still annoying
@@ -278,6 +274,7 @@ struct OverlapRemover{
 				IO=(*fin).get();
 				DWORD vlv=0;
 				if(IO==0x2F){
+					//if(dbg)printf("endoftrack\n");
 					ReadVLV();
 					return 0;
 				}
@@ -305,7 +302,7 @@ struct OverlapRemover{
 			}else{
 				if(RSB>=0x80 && RSB<=0x8F){//NOTEOFF
 					NC++;
-					RSB=RSB;
+					//RSB=RSB;
 					(*fin).get();//same
 					pos=((RSB&0x0F)<<7)|IO;//position of stack for this key/channel pair
 					DC Ev;//event push prepairings
@@ -320,7 +317,7 @@ struct OverlapRemover{
 					}else if(0)cout<<"Detected empty stack pop-attempt (RN):"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
 				}
 				else if(RSB>=0x90 && RSB<=0x9F){//NOTEON
-					RSB=RSB;
+					//RSB=RSB;
 					T=(*fin).get()&0x7F;//magic finished//volume
 					pos=((RSB&0x0F)<<7)|IO;
 					if(T!=0)PNO[pos].push_front(absTick | (((ULI)T)<<56));
@@ -338,11 +335,11 @@ struct OverlapRemover{
 					}
 				}
 				else if((RSB>=0xA0 && RSB<=0xBF) || (RSB>=0xE0 && RSB<=0xEF)){//stupid unusual for visuals stuff 
-					RSB=RSB;
+					//RSB=RSB;
 					(*fin).get();
 				}
 				else if(RSB>=0xC0 && RSB<=0xDF){
-					RSB=RSB;
+					//RSB=RSB;
 				}else{
 					cout<<"Imaprseable data...\n\tdebug:"<<(unsigned int)RSB<<":"<<(unsigned int)IO<<":Off(FBegin):";
 					printf("%x\n",(*fin).tellg());
@@ -405,10 +402,11 @@ struct OverlapRemover{
 		auto pfstr = open_wide_stream<std::ostream>((Link+((RemovingSustains)?L".SOR.mid":L".OR.mid")),L"wb");\
 		ostream& fout = *pfstr;
 		auto Y = OUTPUT.begin();
-		boost::container::flat_multiset<ME>::iterator U;
-		boost::container::flat_multiset<ME> *pMS;
+		btree::btree_multiset<ME>::iterator U;
+		btree::btree_multiset<ME> *pMS;
 		ME Event,PrevEvent;
-		if(dbg)printf("Output..\n");
+		if(dbg)
+			printf("Output..\n");
 		//fout<<'M'<<'T'<<'h'<<'d'<<(BYTE)0<<(BYTE)0<<(BYTE)0<<(BYTE)6<<(BYTE)0<<(BYTE)1;//header
 		//fout<<(BYTE)((TRS.size()>>8))<<(BYTE)((TRS.size()&0xFF));//track number
 		//fout<<(PPQN>>8)<<(PPQN&0xFF);//ppqn
@@ -483,11 +481,11 @@ struct OverlapRemover{
 		DC ImNote;
 		DEC VecInsertable;
 		ULI T,size,LastEdge=0;
-		auto Y=--SET.end();
 		if(!SET.size())return;
+		auto Y = --SET.end();
 		for(int key=0;key<128;key++){
 			ImNote.Key=key;
-			ImNote.Vol=0;
+			ImNote.Vol=1;
 			Y = SET.begin();
 			while(Y!=SET.end()){
 				if((*Y).Key == key){
@@ -547,7 +545,7 @@ struct OverlapRemover{
 			Y++;
 		}
 		if(dbg && RemovingSustains)printf("Notecount might increase after remapping the MIDI\n");
-		if(RemovingSustains)MapNotesAndReadBack();
+		if(RemovingSustains) MapNotesAndReadBack();
 		if(dbg)printf("Prepaired for output...\n");
 		cout<<"Tracks used: "<<TRS.size()<<endl;
 		FormMIDI(Link);
