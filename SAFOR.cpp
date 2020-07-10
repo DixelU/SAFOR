@@ -56,9 +56,6 @@ bool operator<(const DC &a, const DC &b){
 	if(a.Tick<b.Tick)return 1;
 	else if(a.Tick==b.Tick){
 		if(a.Key<b.Key)return 1;
-		else if(RemovingSustains && a.Key==b.Key){
-			return (a.TrackN < b.TrackN);
-		}
 		else return 0;
 	}
 	else return 0;
@@ -73,12 +70,7 @@ bool ShouldBReplaced(const DC &O, DC &N){//old and new//0 - save both//1 replce 
 	else if(N.TrackN>O.TrackN && N.Len<O.Len)return 0;
 	else if(N.TrackN==O.TrackN && N.Len<O.Len)return 0;
 	else if(!RemovingSustains && O.Vol>N.Vol){//N.Vol=O.Vol;
-//		if(RemovingSustains){
-//			if(N.Tick==0)N.Vol=127;
-//			else N.Vol=1;
-//		}else{
-			N.Vol=O.Vol;
-//		}
+		N.Vol=O.Vol;
 	}
 	return 1;
 }
