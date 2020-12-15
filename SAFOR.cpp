@@ -11,7 +11,6 @@
 #include <thread>
 
 #include "bbb_ffio.h"
-#include "allocator.h"
 
 #include "btree/btree.h"
 #include "btree/btree_set.h"
@@ -25,7 +24,7 @@
 #define VOLUMEMASK ((ULI)0xFFFFFFFFFFFFFF)
 #define MTHD 1297377380
 #define MTRK 1297379947
-using namespace std;
+//using namespace std;
 
 constexpr bool RemovingSustains=1;
 #pragma pack(push, 1)
@@ -74,7 +73,7 @@ bool ShouldBReplaced(const DC &O, DC &N){//old and new//0 - save both//1 replce 
 	}
 	return 1;
 }
-ostream& operator<<(ostream& stream, const DC &a){
+std::ostream& operator<<(std::ostream& stream, const DC &a){
 	return (stream<<"K"<<(int)a.Key<<"L"<<a.Len<<"T"<<a.Tick<<"TN"<<a.TrackN);
 }
 
@@ -93,26 +92,27 @@ struct OverlapRemover{
 	OverlapRemover(){
 		RSB=PPQN=CTrack=0;
 	}
-	static void ostream_write(vector<BYTE>& vec, const vector<BYTE>::iterator& beg, const vector<BYTE>::iterator& end, ostream& out) {
+	static void ostream_write(std::vector<BYTE>& vec, const std::vector<BYTE>::iterator& beg, 
+		const std::vector<BYTE>::iterator& end, std::ostream& out) {
 		out.write(((char*)vec.data()) + (beg - vec.begin()), end - beg);
 	}
-	static void ostream_write(vector<BYTE>& vec, ostream& out) {
+	static void ostream_write(std::vector<BYTE>& vec, std::ostream& out) {
 		out.write(((char*)vec.data()), vec.size());;
 	}
 	void ClearPNO(){
 		for(int i=0;i<2048;i++)
 			PNO[i].clear();
 	}
-	void InitializeNPrepare(wstring link){
+	void InitializeNPrepare(std::wstring link){
 		fin = new bbb_ffr(link.c_str());
-		cout<<"File buffer size: "<<fin->tell_bufsize()<<endl;
-		DWORD MThd;
+		std::cout<<"File buffer size: "<<fin->tell_bufsize()<<std::endl;
+		DWORD MThd = 0;
 		BYTE IO;
 		for(int i=0;i<4;i++){
 			IO = fin->get();
 			MThd = (MThd<<8) | (IO); 
 		}
-		cout<<(fin->eof()?"EOF":"File opened")<<endl;
+		std::cout<<(fin->eof()?"EOF":"File opened")<<std::endl;
 		if(MThd==MTHD){
 			for(int i=0;i<8;i++)
 				fin->get();
@@ -127,22 +127,22 @@ struct OverlapRemover{
 		}
 		else{
 			(*fin).close();
-			cout<<"Input file doesn't begin with MThd"<<endl;
+			std::cout<<"Input file doesn't begin with MThd"<<std::endl;
 		}
 	}
 	bool ReadSingleTrackFromCurPos(){//continue?
 		BYTE MTrk[4];
 		RSB=0;
 		ULI CTick=0;//current tick
-		DWORD RTick=0,RData;//real tick (which we just read rn)//read data
+		DWORD RTick=0;//real tick (which we just read rn)//read data
 		RtlZeroMemory(MTrk,4);
 		ClearPNO();
 		for(int i=0;i<4 && !(*fin).eof() && (*fin).good();i++)
 			MTrk[i] = (*fin).get();
 		while(MTrk[0]!='M' && MTrk[1]!='T' && MTrk[2]!='r' && MTrk[3]!='k' && !(*fin).eof() && (*fin).bad()){//such a hack//seeking MTrk
-			swap(MTrk[0],MTrk[1]);
-			swap(MTrk[1],MTrk[2]);
-			swap(MTrk[2],MTrk[3]);
+			std::swap(MTrk[0],MTrk[1]);
+			std::swap(MTrk[1],MTrk[2]);
+			std::swap(MTrk[2],MTrk[3]);
 			MTrk[3]=(*fin).get();
 			printf("Seeking for MTrk\n");///It's standart :t
 		}
@@ -189,7 +189,7 @@ struct OverlapRemover{
 			return VLV;
 		}
 		else{
-			if(0)cout<<"Failed to read VLV at "<<(*fin).tellg()<<endl;//people shouldnt know about VLV being corrupted *lenny face*
+			if(0)std::cout<<"Failed to read VLV at "<<(*fin).tellg()<<std::endl;//people shouldnt know about VLV being corrupted *lenny face*
 			return 0;
 		}
 	}
@@ -200,12 +200,14 @@ struct OverlapRemover{
 			PNO[pos].pop_front();
 			return q;
 		}else{
-			if(0)cout<<"FaPO error "<<pos<<" "<<CTick<<endl;//not critical error//but still annoying
+			if(0)std::cout<<"FaPO error "<<pos<<" "<<CTick<<std::endl;//not critical error//but still annoying
 			return CTick | (VOLUMEMASK + 1);
 		}
 	}
 	bool ParseEvent(ULI absTick){//should we continue?
-		BYTE IO,T;LTE pos;ULI FAPO;
+		BYTE IO,T;
+		LTE pos;
+		ULI FAPO;
 		if(!(*fin).bad() && !(*fin).eof()){
 			IO=(*fin).get();
 			if(IO>=0x80 && IO<=0x8F){//NOTEOFF
@@ -217,14 +219,14 @@ struct OverlapRemover{
 				//if(dbg)printf("NOTEOFF:%x%x00 at %llu\n",RSB,IO,absTick);
 				DC Ev;//event push prepairings
 				Ev.Key=IO;
-				Ev.TrackN=RSB&0x0F | ((CTrack)<<4);
+				Ev.TrackN= (RSB&0x0F) | ((CTrack)<<4);
 				if(!PNO[pos].empty()){
 					FAPO = FindAndPopOut(pos,absTick);
 					Ev.Tick = FAPO&VOLUMEMASK;
 					Ev.Len=absTick-Ev.Tick;
 					Ev.Vol = FAPO>>56;
 					PushNote(Ev);
-				}else if(0)cout<<"Detected empty stack pop-attempt (N):"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
+				}else if(0)std::cout<<"Detected empty stack pop-attempt (N):"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<std::endl;
 			}
 			else if(IO>=0x90 && IO<=0x9F){//NOTEON
 				RSB=IO;
@@ -236,14 +238,14 @@ struct OverlapRemover{
 				else{//quite weird way to represent note off event...
 					DC Ev;//event push prepairings
 					Ev.Key=IO;
-					Ev.TrackN=RSB&0x0F | ((CTrack)<<4);
+					Ev.TrackN= (RSB&0x0F) | ((CTrack)<<4);
 					if(!PNO[pos].empty()){
 						FAPO = FindAndPopOut(pos,absTick);
 						Ev.Tick = FAPO&VOLUMEMASK;
 						Ev.Len=absTick-Ev.Tick;
 						Ev.Vol = FAPO>>56;
 						PushNote(Ev);
-					}else if(0)cout<<"Detected empty stack pop-attempt (0):"<<(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
+					}else if(0)std::cout<<"Detected empty stack pop-attempt (0):"<<(RSB&0x0F)<<'-'<<(unsigned int)IO<<std::endl;
 				}
 				//cout<<PNO[pos].front()<<endl;
 			}
@@ -299,14 +301,14 @@ struct OverlapRemover{
 					pos=((RSB&0x0F)<<7)|IO;//position of stack for this key/channel pair
 					DC Ev;//event push prepairings
 					Ev.Key=IO;
-					Ev.TrackN=RSB&0x0F | ((CTrack)<<4);
+					Ev.TrackN = (RSB&0x0F) | ((CTrack)<<4);
 					if(!PNO[pos].empty()){
 						FAPO = FindAndPopOut(pos,absTick);
 						Ev.Tick = FAPO&VOLUMEMASK;
 						Ev.Len=absTick-Ev.Tick;
 						Ev.Vol = FAPO>>56;
 						PushNote(Ev);
-					}else if(0)cout<<"Detected empty stack pop-attempt (RN):"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
+					}else if(0)std::cout<<"Detected empty stack pop-attempt (RN):"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<std::endl;
 				}
 				else if(RSB>=0x90 && RSB<=0x9F){//NOTEON
 					//RSB=RSB;
@@ -316,14 +318,14 @@ struct OverlapRemover{
 					else{//quite weird way to represent note off event...
 						DC Ev;//event push prepairings
 						Ev.Key=IO;
-						Ev.TrackN=RSB&0x0F | ((CTrack)<<4);
+						Ev.TrackN = (RSB&0x0F) | ((CTrack)<<4);
 						if(!PNO[pos].empty()){
 							FAPO = FindAndPopOut(pos,absTick);
 							Ev.Tick = FAPO&VOLUMEMASK;
 							Ev.Len=absTick-Ev.Tick;
 							Ev.Vol = FAPO>>56;
 							PushNote(Ev);
-						}else if(0)cout<<"Detected empty stack pop-attempt (R0):"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<endl;
+						}else if(0)std::cout<<"Detected empty stack pop-attempt (R0):"<<(unsigned int)(RSB&0x0F)<<'-'<<(unsigned int)IO<<std::endl;
 					}
 				}
 				else if((RSB>=0xA0 && RSB<=0xBF) || (RSB>=0xE0 && RSB<=0xEF)){//stupid unusual for visuals stuff 
@@ -333,7 +335,7 @@ struct OverlapRemover{
 				else if(RSB>=0xC0 && RSB<=0xDF){
 					//RSB=RSB;
 				}else{
-					cout<<"Imaprseable data...\n\tdebug:"<<(unsigned int)RSB<<":"<<(unsigned int)IO<<":Off(FBegin):";
+					std::cout<<"Imaprseable data...\n\tdebug:"<<(unsigned int)RSB<<":"<<(unsigned int)IO<<":Off(FBegin):";
 					printf("%x\n",(*fin).tellg());
 					BYTE I=0,II=0,III=0;
 					while(!(I==0x2F&&II==0xFF&&III==0) && !(*fin).eof()){
@@ -350,7 +352,7 @@ struct OverlapRemover{
 	}
 	void SinglePassMapFiller(){
 		const ULI EDGE_LOGGER = 5000000;
-		cout<<"Single pass scan has started... it might take a while...\n";
+		std::cout<<"Single pass scan has started... it might take a while...\n";
 		auto Y = SET.begin();
 		ULI _Counter = 0;
 		ME Event;
@@ -380,19 +382,19 @@ struct OverlapRemover{
 				//if(dbg)printf("F\n");
 				_Counter++;
 				if(_Counter%EDGE_LOGGER == 0)
-					printf("Single pass scan: %d note\n", _Counter);
+					printf("Single pass scan: %u note\n", _Counter);
 			}
 			Y = SET.erase(Y);
 		}
 		SET.clear();
-		cout<<"Single pass scan has finished... Notecount: "<<_Counter<<endl;
+		std::cout<<"Single pass scan has finished... Notecount: "<<_Counter<<std::endl;
 	}
-	void FormMIDI(wstring Link){
+	void FormMIDI(std::wstring Link){
 		printf("Starting enhanced output algorithm\n");
 		SinglePassMapFiller();
-		vector<BYTE> Track;
+		std::vector<BYTE> Track;
 		auto pfstr = open_wide_stream<std::ostream>((Link+((RemovingSustains)?L".SOR.mid":L".OR.mid")),L"wb");\
-		ostream& fout = *pfstr;
+		std::ostream& fout = *pfstr;
 		auto Y = OUTPUT.begin();
 		btree::btree_multiset<ME>::iterator U;
 		btree::btree_multiset<ME> *pMS;
@@ -421,7 +423,7 @@ struct OverlapRemover{
 			pMS = &((*Y).second);
 			U = pMS->begin();
 			Event.Tick=0;
-			if(dbg)printf("Converting back to MIDI standard\n",(*Y).second.size());
+			if(dbg)printf("Converting back to MIDI standard\n");
 			while(U!=pMS->end()){
 				PrevEvent = Event;
 				Event = *U;
@@ -433,7 +435,7 @@ struct OverlapRemover{
 					clen++;
 				}while(tTick!=0);
 				for (int i = 0; i < (clen >> 1); i++) {
-					swap(Track[Track.size() - 1 - i], Track[Track.size() - clen + i]);
+					std::swap(Track[Track.size() - 1 - i], Track[Track.size() - clen + i]);
 				}
 				for (int i = 2; i <= clen; i++) {
 					Track[Track.size() - i] |= 0x80;///hack (going from 2 instead of going from one)
@@ -461,15 +463,15 @@ struct OverlapRemover{
 			Track[7]=(sz&0xFF);
 			ostream_write(Track,fout);
 			//copy(Track.begin(),Track.end(),ostream_iterator<BYTE>(fout));
-			if(dbg)printf("Track %d went to output\n",(*Y).first);
+			if(dbg)printf("Track %u went to output\n",(*Y).first);
 			Track.clear();
 			Y++;
 		}
 		//fout.close();
 	}
 	void MapNotesAndReadBack(){
-		vector<DWORD> PERKEYMAP;
-		vector<DEC> KEYVEC;
+		std::vector<DWORD> PERKEYMAP;
+		std::vector<DEC> KEYVEC;
 		DC ImNote;
 		DEC VecInsertable;
 		ULI T,size,LastEdge=0;
@@ -480,7 +482,7 @@ struct OverlapRemover{
 			ImNote.Vol=1;
 			Y = SET.begin();
 			while(Y!=SET.end()){
-				if((*Y).Key == key){
+				if((*Y).Key == key) {
 					VecInsertable.Tick=(*Y).Tick;
 					VecInsertable.TrackN=(*Y).TrackN;
 					VecInsertable.Len=(*Y).Len;
@@ -488,20 +490,27 @@ struct OverlapRemover{
 					Y = SET.erase(Y);
 					continue;
 				}
-				else{
+				else {
 					Y++;
 				}
 			}
-			if(KEYVEC.back().Tick + KEYVEC.back().Len <= PERKEYMAP.size())
-				PERKEYMAP.resize(KEYVEC.back().Tick + KEYVEC.back().Len,0);
-			for(auto it=KEYVEC.begin();it!=KEYVEC.end();it++){
+			printf("Set traveral ended with %u keys\n", KEYVEC.size());
+			printf("Expected size: %u\n", (KEYVEC.back().Tick + KEYVEC.back().Len)); // hell
+			if(KEYVEC.back().Tick + KEYVEC.back().Len >= PERKEYMAP.size()){
+				PERKEYMAP.resize(KEYVEC.back().Tick + KEYVEC.back().Len, 0);
+				printf("Key map expansion %u\n", PERKEYMAP.size());
+			}
+			for(auto it=KEYVEC.begin(); it!=KEYVEC.end(); ++it){
 				size = (*it).Tick + (*it).Len;
-				if(size >= PERKEYMAP.size())
-					PERKEYMAP.resize(size,0);
+				if(size > PERKEYMAP.size()){
+					printf("Resize to %u from %u\n", size, PERKEYMAP.size());
+					PERKEYMAP.resize(size, 0);
+				}
 				PERKEYMAP[(*it).Tick] = ((*it).TrackN<<1)|1;
 				for(ULI tick=(*it).Tick + 1; tick < size;tick++)
 					PERKEYMAP[tick] = ((*it).TrackN<<1);
 			}
+			printf("Key map traversal ended\n");
 			KEYVEC.clear();
 			T = 0;
 			LastEdge=0;
@@ -523,11 +532,11 @@ struct OverlapRemover{
 			printf("Key %d processed in sustains removing algorithm\n",key);
 		}
 	}
-	void Load(wstring Link){
+	void Load(std::wstring Link){
 		InitializeNPrepare(Link);
 		printf("Notecount : Successfully pushed notes (Count) : Notes and tempo count without overlaps\n");
 		CTrack=2;//fix//
-		while(ReadSingleTrackFromCurPos()){CTrack++;cout<<NC<<" : "<<PC<<" : "<<ONC<<endl;}
+		while(ReadSingleTrackFromCurPos()){CTrack++;std::cout<<NC<<" : "<<PC<<" : "<<ONC<<std::endl;}
 		(*fin).close();
 		if(dbg)printf("Magic finished with set size %d...\n", SET.size());
 		auto Y=SET.begin();
@@ -539,15 +548,15 @@ struct OverlapRemover{
 		if(dbg && RemovingSustains)printf("Notecount might increase after remapping the MIDI\n");
 		if(RemovingSustains) MapNotesAndReadBack();
 		if(dbg)printf("Prepaired for output...\n");
-		cout<<"Tracks used: "<<TRS.size()<<endl;
+		std::cout<<"Tracks used: "<<TRS.size()<<std::endl;
 		FormMIDI(Link);
 	}
 };
 
-wstring OFD(const wchar_t* Title) {
+std::wstring OFD(const wchar_t* Title) {
 	OPENFILENAMEW ofn;       // common dialog box structure
 	wchar_t szFile[1000];       // buffer for file name
-	vector<wstring> InpLinks;
+	std::vector<std::wstring> InpLinks;
 	ZeroMemory(&ofn, sizeof(ofn));
 	ZeroMemory(szFile, 1000);
 	ofn.lStructSize = sizeof(ofn);
@@ -563,7 +572,7 @@ wstring OFD(const wchar_t* Title) {
 	ofn.lpstrInitialDir = NULL;
 	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER;
 	if (GetOpenFileNameW(&ofn)) {
-		return wstring(szFile);
+		return std::wstring(szFile);
 	}
 	else {
 		return L"";
@@ -571,20 +580,20 @@ wstring OFD(const wchar_t* Title) {
 }
 
 int main(int argc, char** argv) {
-	ofstream of;
-	OverlapRemover WRK;//это структура...
+	std::ofstream of;
+	OverlapRemover WRK;//yoi no?oeoo?a...
 	if(RemovingSustains)
 		printf("SAFSOR. Remapping notes. Velocity is not preserved.\n");
 	else 
 		printf("SAFOR. Velocity Edition.\n");
-	cout<<"\"Open file\" dialog should appear soon...\n";
-	wstring t;
+	std::cout<<"\"Open file\" dialog should appear soon...\n";
+	std::wstring t;
 	while((t = OFD(L"Select MIDI File.")).empty());
 	if(t.size()){
-		cout<<"Filename in ASCII: ";
+		std::cout<<"Filename in ASCII: ";
 		for(auto& ch: t)
-			cout<<(char)ch;
-		cout<<endl;
+			std::cout<<(char)ch;
+		std::cout<<std::endl;
 		WRK.Load(t);
 	}
 	system("pause");
