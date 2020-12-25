@@ -1,5 +1,0 @@
-pip install requests
-python -c "exec(\"from requests import get;\ndef download(url, file_name):\n  with open(file_name, "wb") as file:\n response = get(url);\n  file.write(response.content);\ndownload("https://dl.bintray.com/boostorg/release/1.75.0/source/boost_1_75_0.zip","boost.zip");\")"
-7z x Boost.zip -y .
-mkdir boost
-move boost_1_75_0\boost boost
