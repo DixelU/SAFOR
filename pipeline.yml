@@ -19,5 +19,5 @@ steps:
     7z x -y boost.zip
     move boost_1_75_0\boost boost
     dir
-    g++ SAFOR.cpp -o SAFOR.exe -march=native -mmmx -Ofast -m64 -std=c++14 -static -lcomdlg32 -luuid -m64
+    g++ SAFOR.cpp -o SAFOR.exe -march=native -mmmx -Ofast -m64 -std=c++14 -I"." -static -lcomdlg32 -luuid -m64
   displayName: 'windows-build'
