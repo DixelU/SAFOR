@@ -12,5 +12,7 @@ pool:
 steps:
 - script: |
     dir
+    vcpkg install boost:x86-windows-static
+    vcpkg install boost:x64-windows-static
     g++ SAFOR.cpp -o SAFOR.exe -march=native -mmmx -Ofast -m64 -std=c++14 -static -lcomdlg32 -luuid -m64
   displayName: 'windows-build'
