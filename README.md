@@ -18,6 +18,7 @@ And sadly it *does* load file in memory, but every new event goes through a tons
 Appreciate issue reporting :)
 
 > How do i compile this thing?
+
 Get Dev-CPP and plug it in.  
 Check out for build-in complier to be percicely `TDM-GCC 4.9.2`.  
 Complier flags: `-std=c++14`
