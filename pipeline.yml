@@ -12,8 +12,8 @@ pool:
 steps:
 - script: |
     dir
-    pip install requests
-    python install_boost_fast.py
+    pip3 install wget
+    python download_boost_fast.py
     7z x boost.zip -y .
     mkdir boost
     move boost_1_75_0\boost boost
