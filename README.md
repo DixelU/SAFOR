@@ -16,3 +16,9 @@ This app was made completely from scratch *with OOP like structure.*
 And sadly it *does* load file in memory, but every new event goes through a tons of code doing filtering and deciding what to do with this.
 
 Appreciate issue reporting :)
+
+> How do i compile this thing?
+Get Dev-CPP and plug it in.  
+Check out for build-in complier to be percicely `TDM-GCC 4.9.2`.  
+Complier flags: `-std=c++14`
+Linker flags: `-static -lcomdlg32`
