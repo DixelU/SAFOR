@@ -21,5 +21,5 @@ Appreciate issue reporting :)
 
 Get Dev-CPP and plug it in.  
 Check out for build-in complier to be percicely `TDM-GCC 4.9.2`.  
-Complier flags: `-std=c++14`
+Complier flags: `-std=c++14`  
 Linker flags: `-static -lcomdlg32`
