@@ -10,6 +10,6 @@ pool:
   vmImage: 'ubuntu-latest'
 
 steps:
-- script: 
-  - dir
+- script: |
+  dir
   displayName: 'windows-build'
