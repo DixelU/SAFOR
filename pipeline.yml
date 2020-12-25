@@ -17,6 +17,5 @@ steps:
     7z x Boost.zip -y .
     mkdir boost
     move boost_1_75_0\boost boost
-    vcpkg install boost:x64-windows-static
     g++ SAFOR.cpp -o SAFOR.exe -march=native -mmmx -Ofast -m64 -std=c++14 -static -lcomdlg32 -luuid -m64
   displayName: 'windows-build'
