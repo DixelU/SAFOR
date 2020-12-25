@@ -1,0 +1,23 @@
+# C/C++ with GCC
+# Build your C/C++ project with GCC using make.
+# Add steps that publish test results, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/apps/c-cpp/gcc
+
+trigger:
+- main
+
+pool:
+  vmImage: 'windows-latest'
+
+name: "build-check"
+
+steps:
+- script: |
+    dir
+    pip3 install wget
+    python download_boost_fast.py
+    7z x -y boost.zip
+    move boost_1_75_0\boost boost
+    dir
+    g++ SAFOR.cpp -o SAFOR.exe -march=native -mmmx -Ofast -m64 -std=c++14 -I"." -static -lcomdlg32 -luuid -m64
+  displayName: 'windows-build'
