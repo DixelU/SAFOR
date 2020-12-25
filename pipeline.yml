@@ -16,9 +16,9 @@ steps:
     dir
     pip3 install wget
     python download_boost_fast.py
-    7z x boost.zip -y boost_unpacked
+    7z x -y boost.zip
     dir
     mkdir boost
-    move boost_unpacked\boost_1_75_0\boost boost
+    move boost_1_75_0\boost boost
     g++ SAFOR.cpp -o SAFOR.exe -march=native -mmmx -Ofast -m64 -std=c++14 -static -lcomdlg32 -luuid -m64
   displayName: 'windows-build'
