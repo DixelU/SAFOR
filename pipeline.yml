@@ -8,13 +8,9 @@ trigger:
 
 pool:
   vmImage: 'windows-latest'
-
+ 
 steps:
 - script: |
     dir
-    powershell -Command "Invoke-WebRequest https://sourceforge.net/projects/tdm-gcc/files/TDM-GCC%204.9%20series/4.9.2-tdm-1%20DW2/gcc-4.9.2-tdm-1-dw2-c%2B%2B.zip/download -OutFile tdm_gcc.zip"
-    7z -version
-    cd tdm_gcc
-    cd bin
-    # g++dw2.exe "" -o "" -march=native -mmmx -Ofast -m64 -std=c++14 -static -lcomdlg32 -luuid -m64
+    g++ SAFOR.cpp -o SAFOR.exe -march=native -mmmx -Ofast -m64 -std=c++14 -static -lcomdlg32 -luuid -m64
   displayName: 'windows-build'
