@@ -8,7 +8,9 @@ trigger:
 
 pool:
   vmImage: 'windows-latest'
- 
+
+name: "build-check"
+
 steps:
 - script: |
     dir
