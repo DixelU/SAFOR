@@ -26,7 +26,11 @@
 #define MTRK 1297379947
 //using namespace std;
 
-constexpr bool RemovingSustains=1;
+#ifndef REMSUST 
+#define REMSUST true
+#endif
+
+constexpr bool RemovingSustains = REMSUST;
 #pragma pack(push, 1)
 
 bool dbg=1;
