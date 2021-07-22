@@ -13,21 +13,20 @@ name: "build-check"
 
 steps:
 - script: |
-    dir
     pip3 install wget
     python download_boost_fast.py
     7z x -y boost.zip
     move boost_1_76_0\boost boost
+    g++ SAFOR.cpp -o S64.exe -DREMSUST=false -march=native -mmmx -Ofast -m64 -std=c++17 -I"." -static -lcomdlg32 -luuid -m64 -s
+    g++ SAFOR.cpp -o S32.exe -DREMSUST=false -march=native -mmmx -Ofast -m32 -std=c++17 -I"." -static -lcomdlg32 -luuid -m32 -s
+    g++ SAFOR.cpp -o SSR.exe -DREMSUST=true -march=native -mmmx -Ofast -m64 -std=c++17 -I"." -static -lcomdlg32 -luuid -m64 -s
+    g++ SAFOR.cpp -o SAR.exe -DVELOCITYTHRESHOLDFLAG -march=native -mmmx -Ofast -m64 -std=c++17 -I"." -static -lcomdlg32 -luuid -m64 -s
     dir
-    g++ SAFOR.cpp -o SAFOR64.exe -DREMSUST=false -march=native -mmmx -Ofast -m64 -std=c++17 -I"." -static -lcomdlg32 -luuid -m64 -s
-    g++ SAFOR.cpp -o SAFOR32.exe -DREMSUST=false -march=native -mmmx -Ofast -m32 -std=c++17 -I"." -static -lcomdlg32 -luuid -m32 -s
-    g++ SAFOR.cpp -o SAFSOR.exe -DREMSUST=true -march=native -mmmx -Ofast -m64 -std=c++17 -I"." -static -lcomdlg32 -luuid -m64 -s
-    g++ SAFOR.cpp -o SAFAR.exe -DVELOCITYTHRESHOLDFLAG -march=native -mmmx -Ofast -m64 -std=c++17 -I"." -static -lcomdlg32 -luuid -m64 -s
     mkdir SAFR 
-    move SAFOR64.exe SAFR/SAFOR64.exe
-    move SAFOR32.exe SAFR/SAFOR32.exe
-    move SAFSOR.exe SAFR/SAFSOR.exe
-    move SAFAR.exe SAFR/SAFAR.exe
+    move S64.exe SAFR/SAFOR64.exe
+    move S32.exe SAFR/SAFOR32.exe
+    move SSR.exe SAFR/SAFSOR.exe
+    move SAR.exe SAFR/SAFAR.exe
   displayName: 'windows-build'
 
 - task: PublishBuildArtifacts@1

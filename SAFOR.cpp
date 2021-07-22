@@ -27,8 +27,8 @@
 #define MTRK 1297379947
 //using namespace std;
 
-#define VELOCITYTHRESHOLDFLAG
-#define REMSUST false
+//#define VELOCITYTHRESHOLDFLAG
+//#define REMSUST false
 
 #ifndef REMSUST
 #define REMSUST true
