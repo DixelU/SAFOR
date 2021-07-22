@@ -17,10 +17,10 @@ steps:
     python download_boost_fast.py
     7z x -y boost.zip
     move boost_1_76_0\boost boost
-    g++ SAFOR.cpp -o S64.exe -DREMSUST=false -march=native -mmmx -Ofast -m64 -std=c++17 -I"." -lcomdlg32 -luuid -m64 -s
-    g++ SAFOR.cpp -o S32.exe -DREMSUST=false -march=native -mmmx -Ofast -m32 -std=c++17 -I"." -lcomdlg32 -luuid -m32 -s
-    g++ SAFOR.cpp -o SSR.exe -DREMSUST=true -march=native -mmmx -Ofast -m64 -std=c++17 -I"." -lcomdlg32 -luuid -m64 -s
-    g++ SAFOR.cpp -o SAR.exe -DVELOCITYTHRESHOLDFLAG -march=native -mmmx -Ofast -m64 -std=c++17 -I"." -lcomdlg32 -luuid -m64 -s
+    g++ SAFOR.cpp -o S64.exe -DREMSUST=false -mmmx -Ofast -m64 -std=c++14 -I"." -lcomdlg32 -luuid -m64 -s
+    g++ SAFOR.cpp -o S32.exe -DREMSUST=false -mmmx -Ofast -m32 -std=c++14 -I"." -lcomdlg32 -luuid -m32 -s
+    g++ SAFOR.cpp -o SSR.exe -DREMSUST=true -mmmx -Ofast -m64 -std=c++14 -I"." -lcomdlg32 -luuid -m64 -s
+    g++ SAFOR.cpp -o SAR.exe -DVELOCITYTHRESHOLDFLAG -mmmx -Ofast -m64 -std=c++14 -I"." -lcomdlg32 -luuid -m64 -s
     dir
     mkdir SAFR 
     move S64.exe SAFR/SAFOR64.exe
