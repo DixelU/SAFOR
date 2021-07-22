@@ -29,6 +29,8 @@ steps:
     move SAFSOR.exe SAFR/SAFSOR.exe
     move SAFAR.exe SAFR/SAFAR.exe
   displayName: 'windows-build'
-inputs:
+
+- task: PublishBuildArtifacts@1
+  inputs:
     pathToPublish: 'SAFR'
     artifactName: SAFORs
