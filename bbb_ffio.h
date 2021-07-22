@@ -13,7 +13,7 @@
 template<typename stream>
 stream* open_wide_stream(std::wstring file, const wchar_t* parameter){
 	FILE* c_file = _wfopen(file.c_str(), parameter);
-	__gnu_cxx::stdio_filebuf<char>* buffer = new __gnu_cxx::stdio_filebuf<char>(c_file, std::ios_base::out, 1);
+	__gnu_cxx::stdio_filebuf<char>* buffer = new __gnu_cxx::stdio_filebuf<char>(c_file, std::ios_base::out | std::ios_base::binary , 100000);
 	
 	return new stream(buffer);
 }

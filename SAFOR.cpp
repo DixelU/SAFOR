@@ -1,5 +1,6 @@
 #include <iostream>
 #include <set>
+#include <string>
 #include <stack>
 #include <vector>
 #include <fstream>
@@ -338,7 +339,7 @@ struct OverlapRemover {
 				} else if(RSB>=0xC0 && RSB<=0xDF) {
 					//RSB=RSB;
 				} else {
-					std::cout<<"Imaprseable data...\n\tdebug:"<<(unsigned int)RSB<<":"<<(unsigned int)IO<<":Off(FBegin):";
+					std::cout<<"Imparseable data...\n\tdebug:"<<(unsigned int)RSB<<":"<<(unsigned int)IO<<":Off(FBegin):";
 					printf("%x\n",(*fin).tellg());
 					BYTE I=0,II=0,III=0;
 					while(!(I==0x2F&&II==0xFF&&III==0) && !(*fin).eof()) {
@@ -564,15 +565,18 @@ struct OverlapRemover {
 			std::cout<<NC<<" : "<<PC<<" : "<<ONC<<std::endl;
 		}
 		(*fin).close();
+		
 		if(dbg)printf("Magic finished with set size %d...\n", SET.size());
+		if(dbg && RemovingSustains) printf("Notecount might increase after remapping the MIDI\n");
+		if(RemovingSustains) MapNotesAndReadBack();
+		
 		auto Y=SET.begin();
 		while(Y!=SET.end()) { 
 			if(TRS.find((*Y).TrackN)==TRS.end()) TRS.insert(((*Y).TrackN));
 			//std::cout << (*Y).Tick << " " << (*Y).Len << " " << (*Y).TrackN << " " << (*Y).Key <<  std::endl;
 			Y++;
 		}
-		if(dbg && RemovingSustains) printf("Notecount might increase after remapping the MIDI\n");
-		if(RemovingSustains) MapNotesAndReadBack();
+		
 		if(dbg)printf("Prepaired for output...\n");
 		std::cout<<"Tracks used: "<<TRS.size()<<std::endl;
 		FormMIDI(Link);
@@ -608,8 +612,12 @@ int main(int argc, char** argv) {
 	std::ofstream of;
 	OverlapRemover WRK;//yoi no?oeoo?a...
 #ifdef VELOCITYTHRESHOLDFLAG
-	printf("SAFOR. Art removing mod.\nEnter the minimal \"pass\" volume (0-127): ");
-	std::cin>>MINVOL;
+	if(argc <= 1){
+		printf("SAFOR. Art removing mod.\nEnter the minimal \"pass\" volume (0-127): ");
+		std::cin>>MINVOL;
+	}
+	else
+		MINVOL = std::stoi(std::string(argv[1]));
 #else
 	if(RemovingSustains)
 		printf("SAFSOR. Remapping notes. Velocity is not preserved.\n");
