@@ -18,13 +18,13 @@ steps:
     7z x -y boost.zip
     move boost_1_76_0\boost boost
     g++ SAFOR.cpp -o S64.exe -DREMSUST=false -mmmx -Ofast -m64 -std=c++14 -I"." -lcomdlg32 -luuid -m64 -s
-    g++ SAFOR.cpp -o S32.exe -DREMSUST=false -mmmx -Ofast -m32 -std=c++14 -I"." -lcomdlg32 -luuid -m32 -s
+#   g++ SAFOR.cpp -o S32.exe -DREMSUST=false -mmmx -Ofast -m32 -std=c++14 -I"." -lcomdlg32 -luuid -m32 -s
     g++ SAFOR.cpp -o SSR.exe -DREMSUST=true -mmmx -Ofast -m64 -std=c++14 -I"." -lcomdlg32 -luuid -m64 -s
     g++ SAFOR.cpp -o SAR.exe -DVELOCITYTHRESHOLDFLAG -mmmx -Ofast -m64 -std=c++14 -I"." -lcomdlg32 -luuid -m64 -s
     dir
     mkdir SAFR 
     move S64.exe SAFR/SAFOR64.exe
-    move S32.exe SAFR/SAFOR32.exe
+#   move S32.exe SAFR/SAFOR32.exe
     move SSR.exe SAFR/SAFSOR.exe
     move SAR.exe SAFR/SAFAR.exe
   displayName: 'windows-build'
