@@ -1,7 +1,0 @@
-O:\Progs\Dev-Cpp\TDM-GCC-64\bin\windres.exe --input SAFOR32.rc --output SAFOR32.res --output-format=coff --target pe-i386
-
-O:\Progs\Dev-Cpp\TDM-GCC-64\bin\windres.exe --input SAFOR64.rc --output SAFOR64.res --output-format=coff --target pe-x86-64
-
-O:\Progs\Dev-Cpp\TDM-GCC-64\bin\g++.exe SAFOR.cpp -o SAFOR64.exe SAFOR64.res -msse2 -Ofast -m64 -std=gnu++17 -I"O:\Progs\Dev-Cpp\TDM-GCC-64\include" -I"O:\Progs\Dev-Cpp\TDM-GCC-64\x86_64-w64-mingw32\include" -I"O:\Progs\Dev-Cpp\TDM-GCC-64\lib\gcc\x86_64-w64-mingw32\9.2.0\include" -I"O:\Progs\Dev-Cpp\TDM-GCC-64\lib\gcc\x86_64-w64-mingw32\9.2.0\include\c++" -I"O:\boost" -L"O:\Progs\Dev-Cpp\TDM-GCC-64\lib" -L"O:\Progs\Dev-Cpp\TDM-GCC-64\x86_64-w64-mingw32\lib" -L"O:\GCC_libs\lib_x64" -static -lcomdlg32 -lws2_32 -lwinmm -lgdi32 -ldwmapi -lole32 -lglew32 -lglew32mx -lfreeglut -lopengl32 -lglu32 -loleaut32 -loleaut32 -luuid -luxtheme -lcomctl32 -lmincore -lurlmon -s
-
-O:\Progs\Dev-Cpp\TDM-GCC-64\bin\g++.exe SAFOR.cpp -o SAFOR32.exe SAFOR32.res -march=native -msse2 -Ofast -m32 -std=gnu++17 -I"O:\Progs\Dev-Cpp\TDM-GCC-64\include" -I"O:\Progs\Dev-Cpp\TDM-GCC-64\x86_64-w64-mingw32\include" -I"O:\Progs\Dev-Cpp\TDM-GCC-64\lib\gcc\x86_64-w64-mingw32\9.2.0\include" -I"O:\Progs\Dev-Cpp\TDM-GCC-64\lib\gcc\x86_64-w64-mingw32\9.2.0\include\c++" -I"O:\boost" -L"O:\Progs\Dev-Cpp\TDM-GCC-64\x86_64-w64-mingw32\lib32" -L"O:\GCC_libs" -static -lcomdlg32 -lws2_32 -lwinmm -lgdi32 -ldwmapi -lole32 -lglew32 -lglew32mx -lfreeglut -lopengl32 -lglu32 -loleaut32 -loleaut32 -luuid -luxtheme -lcomctl32 -lmincore -lurlmon -s

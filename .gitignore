@@ -1,1 +1,7 @@
-*.exe
+build.cmd
+SAFOR.exe
+SAFOR32.exe
+SAFOR64.exe
+SAFOR32.res
+SAFOR64.res
+SAFOR_version.h.gch
