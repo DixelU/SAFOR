@@ -1,0 +1,30 @@
+#include <windows.h> 
+#include "SAFOR_version.h"
+
+1 RT_MANIFEST SAFOR32.manifest
+
+1 VERSIONINFO
+FILEVERSION VER_MAJOR,VER_MINOR,VER_RELEASE,VER_BUILD
+PRODUCTVERSION VER_MAJOR,VER_MINOR,VER_RELEASE,VER_BUILD
+FILETYPE VFT_APP
+{
+  BLOCK "StringFileInfo"
+  {
+    BLOCK "040904E4"
+    {
+      VALUE "CompanyName", COMPANY_NAME
+      VALUE "FileVersion", FILE_VERSION
+      VALUE "FileDescription", FILE_DESCRIPTION
+      VALUE "InternalName", INTERNAL_NAME
+      VALUE "LegalCopyright", ""
+      VALUE "LegalTrademarks", ""
+      VALUE "OriginalFilename", INTERNAL_NAME
+      VALUE "ProductName", INTERNAL_NAME
+      VALUE "ProductVersion", FILE_VERSION
+    }
+  }
+  BLOCK "VarFileInfo"
+  {
+    VALUE "Translation", 0x0409, 1252
+  }
+}

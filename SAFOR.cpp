@@ -8,8 +8,9 @@
 #include <list>
 #include <map>
 #include <boost/container/flat_set.hpp>
-#include <windows.h>
 #include <thread>
+
+#include "winapi_garbage.h"
 
 #include "bbb_ffio.h"
 
@@ -25,21 +26,12 @@ using KeyDataType = BYTE;						//key data type
 constexpr auto VOLUMEMASK = ((UnsigedLongInt)0xFFFFFFFFFFFFFF);
 constexpr DWORD MTHD = 1297377380;
 constexpr DWORD MTRK = 1297379947;
-//using namespace std;
 
-#define VELOCITYTHRESHOLDFLAG
-#define REMSUST false
+//#pragma pack(push, 1)
 
-#ifndef REMSUST
-#define REMSUST true
-#endif
-
-constexpr bool RemovingSustains = REMSUST;
-#pragma pack(push, 1)
-
-#ifdef VELOCITYTHRESHOLDFLAG
-BYTE MinimalVolume = 0;
-#endif
+bool VelocityMode = false;
+bool RemovingSustains = false;
+unsigned char MinimalVolume = 0;
 
 bool dbg = 1;
 
@@ -98,9 +90,6 @@ struct OverlapsRemover {
 	btree::btree_multiset<NoteObject> NoteSet;
 	btree::btree_multiset<TrackNumberType> TracksSet;
 	btree::btree_map<DWORD, btree::btree_multiset<PrepairedEvent>> MappedNotesSet;
-	//multiset<NoteObject,less<NoteObject>,moya_alloc::allocator<NoteObject,100000>> NoteSet;
-	//multiset<TrackNumberType> TracksSet;//tracks
-	//map<DWORD,boost::container::flat_multiset<PrepairedEvent>> MappedNotesSet;
 	std::array<std::deque<UnsigedLongInt>, 2048> Polyphony;//first 128 is first channel, next 128 are the second... etc
 	bbb_ffr* FileInput;
 	OverlapsRemover() {
@@ -160,7 +149,8 @@ struct OverlapsRemover {
 			(*FileInput).get(); //itterating through track's lenght
 		while (!(*FileInput).bad() && !(*FileInput).eof()) {
 			RealTick = ReadVLV();
-			if (!ParseEvent(CurrentTick += RealTick))return 1;
+			if (!ParseEvent(CurrentTick += RealTick))
+				return 1;
 		}
 		return 0;
 	}
@@ -172,24 +162,26 @@ struct OverlapsRemover {
 	}
 	void PushNote(NoteObject& Ev) {
 		OverlapslessCount++;
-#ifdef VELOCITYTHRESHOLDFLAG
-		if (Ev.Vol < MinimalVolume && Ev.Key < 0xFF) return;
-#else
-		PushedCount++;
-		auto e_pair = NoteSet.equal_range(Ev);
-		if (NoteSet.size() && e_pair.first != NoteSet.end()) {
-			auto current_p = e_pair.first;
-			auto rightmost = *(--e_pair.second);
-			while (current_p != NoteSet.end() && (!(*current_p < rightmost) && !(rightmost < *current_p))) {
-				if (PriorityPredicate(*current_p, Ev)) {
-					current_p = NoteSet.erase(current_p);
-					OverlapslessCount--;
+		if(VelocityMode) {
+			if (Ev.Vol < MinimalVolume && Ev.Key < 0xFF) 
+				return;
+		}
+		else {
+			PushedCount++;
+			auto e_pair = NoteSet.equal_range(Ev);
+			if (NoteSet.size() && e_pair.first != NoteSet.end()) {
+				auto current_p = e_pair.first;
+				auto rightmost = *(--e_pair.second);
+				while (current_p != NoteSet.end() && (!(*current_p < rightmost) && !(rightmost < *current_p))) {
+					if (PriorityPredicate(*current_p, Ev)) {
+						current_p = NoteSet.erase(current_p);
+						OverlapslessCount--;
+					}
+					else
+						current_p++;
 				}
-				else
-					current_p++;
 			}
 		}
-#endif
 		NoteSet.insert(Ev);
 	}
 	DWORD ReadVLV() { //from current position
@@ -232,7 +224,6 @@ struct OverlapsRemover {
 				ByteVar1 = (*FileInput).get() & 0x7F;
 				pos = ((RunningStatus & 0x0F) << 7) | ByteVar1;//position of stack for this key/channel pair
 				(*FileInput).get();
-				//if(dbg)printf("NOTEOFF:%x%x00 at %llu\n",RunningStatus,ByteVariable,absTick);
 				NoteObject Event;//event push prepairings
 				Event.Key = ByteVar1;
 				Event.TrackN = (RunningStatus & 0x0F) | ((CurrentTrack) << 4);
@@ -249,7 +240,6 @@ struct OverlapsRemover {
 				RunningStatus = ByteVar1;
 				ByteVar1 = (*FileInput).get() & 0x7F;
 				ByteVar2 = (*FileInput).get() & 0x7F;
-				//if(dbg)printf("NOTEON:%x%x%x at %llu\n",RunningStatus,ByteVariable,ByteVar2,absTick);
 				pos = ((RunningStatus & 0x0F) << 7) | ByteVar1;
 				if (ByteVar2 != 0)
 					Polyphony[pos].push_front(absTick | (((UnsigedLongInt)ByteVar2) << 56));
@@ -279,7 +269,6 @@ struct OverlapsRemover {
 			else if (ByteVar1 >= 0xF0 && ByteVar1 <= 0xF7) {
 				RunningStatus = 0;
 				DWORD vlv = ReadVLV();
-				//(*FileInput).seekg(vlv,std::ios::cur);
 				for (int i = 0; i < vlv; i++)(*FileInput).get();
 			}
 			else if (ByteVar1 == 0xFF) {
@@ -298,7 +287,6 @@ struct OverlapsRemover {
 						vlv = (vlv << 8) | ByteVar1;
 					}//in vlv we have tempo data :)
 
-					//if(dbg)printf("TEMPO:%x at %x\n",vlv,(*FileInput).tellg());
 					NoteObject Event;//event push prepairings
 					Event.Key = 0xFF;
 					Event.TrackN = 0;
@@ -308,8 +296,6 @@ struct OverlapsRemover {
 				}
 				else {
 					vlv = ReadVLV();
-					//if(dbg)printf("REGMETASIZE:%x at %x\n",vlv,(*FileInput).tellg());
-					//(*FileInput).seekg(vlv,std::ios::cur);
 					for (int i = 0; i < vlv; i++)
 						(*FileInput).get();
 				}
@@ -317,7 +303,6 @@ struct OverlapsRemover {
 			else {
 				if (RunningStatus >= 0x80 && RunningStatus <= 0x8F) { //NOTEOFF
 					Notecount++;
-					//RunningStatus=RunningStatus;
 					(*FileInput).get();//same
 					pos = ((RunningStatus & 0x0F) << 7) | ByteVar1;//position of stack for this key/channel pair
 					NoteObject Event;//event push prepairings
@@ -333,7 +318,6 @@ struct OverlapsRemover {
 					else if (0)std::cout << "Detected empty stack pop-attempt (RN):" << (unsigned int)(RunningStatus & 0x0F) << '-' << (unsigned int)ByteVar1 << std::endl;
 				}
 				else if (RunningStatus >= 0x90 && RunningStatus <= 0x9F) { //NOTEON
-				 //RunningStatus=RunningStatus;
 					ByteVar2 = (*FileInput).get() & 0x7F;//magic finished//volume
 					pos = ((RunningStatus & 0x0F) << 7) | ByteVar1;
 					if (ByteVar2 != 0)
@@ -353,20 +337,17 @@ struct OverlapsRemover {
 					}
 				}
 				else if ((RunningStatus >= 0xA0 && RunningStatus <= 0xBF) || (RunningStatus >= 0xE0 && RunningStatus <= 0xEF)) { //stupid unusual for visuals stuff
-				 //RunningStatus=RunningStatus;
 					(*FileInput).get();
 				}
-				else if (RunningStatus >= 0xC0 && RunningStatus <= 0xDF) {
-					//RunningStatus=RunningStatus;
-				}
+				else if (RunningStatus >= 0xC0 && RunningStatus <= 0xDF) { }
 				else {
 					std::cout << "Imparseable data...\n\tdebug:" << (unsigned int)RunningStatus << ":" << (unsigned int)ByteVar1 << ":Off(FBegin):";
 					printf("%x\n", (*FileInput).tellg());
 					BYTE I = 0, II = 0, III = 0;
-					while (!(I == 0x2F && II == 0xFF && III == 0) && !(*FileInput).eof()) {
-						III = II;
-						II = I;
-						I = (*FileInput).get();
+					while (!(I == 0xFF && II == 0x2F && III == 0) && !(*FileInput).eof()) {
+						I = II;
+						II = III;
+						III = (*FileInput).get();
 					}
 					(*FileInput).get();
 					return 0;
@@ -378,6 +359,7 @@ struct OverlapsRemover {
 	}
 	void SinglePassMapFiller() {
 		const UnsigedLongInt EDGE_LOGGER = 5000000;
+		UnsigedLongInt DumpCounter = 0;
 		std::cout << "Single pass scan has started... it might take a while...\n";
 		auto Y = NoteSet.begin();
 		UnsigedLongInt _Counter = 0;
@@ -394,7 +376,6 @@ struct OverlapsRemover {
 				MappedNotesSet[Note.TrackN].insert(Event);
 			}
 			else {
-				//if(dbg)printf("NOTE\filenames");
 				Note.Key &= 0xFF;
 				Event.Tick = Note.Tick;//noteon event
 				Event.A = 0;
@@ -406,26 +387,45 @@ struct OverlapsRemover {
 				Event.B ^= 0x10;
 				Event.D = 0x40;
 				MappedNotesSet[Note.TrackN].insert(Event);
-				//if(dbg)printf("F\n");
 				_Counter++;
-				if (_Counter % EDGE_LOGGER == 0)
+				if (_Counter >= EDGE_LOGGER) {
 					printf("Single pass scan: %u note\n", _Counter);
+					DumpCounter += _Counter;
+					_Counter = 0;
+				}
 			}
 			Y = NoteSet.erase(Y);
 		}
 		NoteSet.clear();
 		std::cout << "Single pass scan has finished... Notecount: " << _Counter << std::endl;
 	}
+	inline uint8_t push_vlv(uint32_t value, std::vector<BYTE>& vec) {
+		constexpr uint8_t $7byte_mask = 0x7F, max_size = 5, $7byte_mask_size = 7;
+		constexpr uint8_t $adjacent7byte_mask = ~$7byte_mask;
+		uint8_t stack[max_size];
+		uint8_t size = 0;
+		uint8_t r_size = 0;
+		do {
+			stack[size] = (value & $7byte_mask);
+			value >>= $7byte_mask_size;
+			if (size)
+				stack[size] |= $adjacent7byte_mask;
+			size++;
+		} while (value);
+		r_size = size;
+		while (size)
+			vec.push_back(stack[--size]);
+		return r_size;
+	};
 	void FormMIDI(std::wstring Link) {
 		printf("Starting enhanced output algorithm\n");
 		SinglePassMapFiller();
 		std::vector<BYTE> Track;
+		
 		auto pfstr = open_wide_stream<std::ostream>((Link + (
-#ifdef VELOCITYTHRESHOLDFLAG
-			L".AR.mid"
-#else
-			(RemovingSustains) ? L".SOR.mid" : L".OR.mid"
-#endif
+			(VelocityMode)?
+			L".AR.mid" :
+			((RemovingSustains) ? L".SOR.mid" : L".OR.mid" )
 			)), L"wb");
 		std::ostream& fout = *pfstr;
 		auto Y = MappedNotesSet.begin();
@@ -434,9 +434,6 @@ struct OverlapsRemover {
 		PrepairedEvent Event, PrevEvent;
 		if (dbg)
 			printf("Output..\n");
-		//fout<<'M'<<'ByteVar2'<<'h'<<'d'<<(BYTE)0<<(BYTE)0<<(BYTE)0<<(BYTE)6<<(BYTE)0<<(BYTE)1;//header
-		//fout<<(BYTE)((TracksSet.size()>>8))<<(BYTE)((TracksSet.size()&0xFF));//track number
-		//fout<<(PPQN>>8)<<(PPQN&0xFF);//ppqn
 		fout.put('M');
 		fout.put('T');
 		fout.put('h');
@@ -471,18 +468,7 @@ struct OverlapsRemover {
 				PrevEvent = Event;
 				Event = *U;
 				DWORD tTick = Event.Tick - PrevEvent.Tick, clen = 0;
-				//if(dbg)printf("dtFormat... %d\n",tTick);
-				do { //delta time formatiing begins here
-					Track.push_back(tTick & 0x7F);
-					tTick >>= 7;
-					clen++;
-				} while (tTick != 0);
-				for (int i = 0; i < (clen >> 1); i++) {
-					std::swap(Track[Track.size() - 1 - i], Track[Track.size() - clen + i]);
-				}
-				for (int i = 2; i <= clen; i++) {
-					Track[Track.size() - i] |= 0x80;///hack (going from 2 instead of going from one)
-				}
+				push_vlv(tTick, Track);
 				if (Event.A == 0x03) {
 					Track.push_back(0xFF);
 					Track.push_back(0x51);
@@ -509,7 +495,6 @@ struct OverlapsRemover {
 			Track[6] = (sz & 0xFF00) >> 8;
 			Track[7] = (sz & 0xFF);
 			ostream_write(Track, fout);
-			//copy(Track.begin(),Track.end(),ostream_iterator<BYTE>(fout));
 			if (dbg)printf("Track %u went to output\n", (*Y).first);
 			Track.clear();
 			Y++;
@@ -556,7 +541,7 @@ struct OverlapsRemover {
 					PERKEYMAP.resize(size, 0);
 				}
 				PERKEYMAP[(*it).Tick] = ((*it).TrackN << 1) | 1;
-				for (UnsigedLongInt tick = (*it).Tick + 1; tick < size; tick++)
+				for (UnsigedLongInt tick = (*it).Tick + 1; tick < size; ++tick)
 					PERKEYMAP[tick] = ((*it).TrackN << 1);
 			}
 			printf("Key map traversal ended\n");
@@ -566,7 +551,7 @@ struct OverlapsRemover {
 			size = PERKEYMAP.size();
 			while (T < size) {
 				LastEdge = T;
-				for (T++; T < size; T++) {
+				for (++T; T < size; ++T) {
 					if (PERKEYMAP[T] >> 1 != PERKEYMAP[T - 1] >> 1 || PERKEYMAP[T] & 1) {
 						ImNote.Len = T - LastEdge;
 						ImNote.Tick = LastEdge;
@@ -575,7 +560,7 @@ struct OverlapsRemover {
 						if (ImNote.TrackN)NoteSet.insert(ImNote);
 						break;
 					}
-				}
+				} 
 			}
 			PERKEYMAP.clear();
 			printf("Key %d processed in sustains removing algorithm\n", key);
@@ -598,7 +583,6 @@ struct OverlapsRemover {
 		auto Y = NoteSet.begin();
 		while (Y != NoteSet.end()) {
 			if (TracksSet.find((*Y).TrackN) == TracksSet.end()) TracksSet.insert(((*Y).TrackN));
-			//std::cout << (*Y).Tick << " " << (*Y).Len << " " << (*Y).TrackN << " " << (*Y).Key <<  std::endl;
 			Y++;
 		}
 
@@ -635,21 +619,27 @@ std::wstring OpenFileDialog(const wchar_t* Title) {
 }
 
 int main(int argc, char** argv) {
-	std::ofstream of;
-	OverlapsRemover WRK;//yoi no?oeoo?a...
-#ifdef VELOCITYTHRESHOLDFLAG
-	if (argc <= 1) {
-		printf("SAFOR. Art removing mod.\nEnter the minimal \"pass\" volume (0-127): ");
-		std::cin >> MinimalVolume;
+	while(winapi_garbage::GetMode() < 0);
+	VelocityMode = (winapi_garbage::RemovalModeLine == 2);
+	RemovingSustains = (winapi_garbage::RemovalModeLine == 1);
+	std::cout << VelocityMode << " " << RemovingSustains << std::endl; 
+	
+	OverlapsRemover WRK;
+	if(VelocityMode){
+		if (argc <= 1) {
+			while(winapi_garbage::GetTheshold() < 0);
+			MinimalVolume = winapi_garbage::VelocityThreshold;
+		}
+		else
+			MinimalVolume = std::stoi(std::string(argv[1]));
+		printf("SAFOR. Art removing mode. Overlaps/sustains are not touched.\n");
 	}
-	else
-		MinimalVolume = std::stoi(std::string(argv[1]));
-#else
-	if (RemovingSustains)
-		printf("SAFSOR. Remapping notes. Velocity is not preserved.\n");
-	else
-		printf("SAFOR. Velocity Edition.\n");
-#endif
+	else{
+		if (RemovingSustains)
+			printf("SAFSOR. Note remapping enabled. Velocity is not preserved.\n");
+		else
+			printf("SAFOR. Velocity Edition.\n");
+	}
 	std::cout << "\"Open file\" dialog should appear soon...\n";
 	std::wstring filenames;
 	while ((filenames = OpenFileDialog(L"Select MIDI File.")).empty());

@@ -17,16 +17,14 @@ steps:
     python download_boost_fast.py
     7z x -y boost.zip
     move boost_1_76_0\boost boost
-    g++ SAFOR.cpp -o S64.exe -DREMSUST=false -mmmx -Ofast -m64 -std=c++14 -I"." -lcomdlg32 -luuid -m64 -s
-    g++ SAFOR.cpp -o S32.exe -DREMSUST=false -mmmx -Ofast -m32 -std=c++14 -I"." -lcomdlg32 -luuid -m32 -s
-    g++ SAFOR.cpp -o SSR.exe -DREMSUST=true -mmmx -Ofast -m64 -std=c++14 -I"." -lcomdlg32 -luuid -m64 -s
-    g++ SAFOR.cpp -o SAR.exe -DVELOCITYTHRESHOLDFLAG -mmmx -Ofast -m64 -std=c++14 -I"." -lcomdlg32 -luuid -m64 -s
+    windres --input SAFOR32.rc --output SAFOR32.res --output-format=coff --target pe-i386
+    windres --input SAFOR64.rc --output SAFOR64.res --output-format=coff --target pe-x86-64
+    g++ SAFOR.cpp -o SAFOR64.exe SAFOR64.res -msse2 -Ofast -m64 -std=c++17 -I"." -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
+    g++ SAFOR.cpp -o SAFOR32.exe SAFOR32.res -msse2 -Ofast -m32 -std=c++17 -I"." -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
     dir
     mkdir SAFR 
-    move S64.exe SAFR/SAFOR64.exe
-    move S32.exe SAFR/SAFOR32.exe
-    move SSR.exe SAFR/SAFSOR.exe
-    move SAR.exe SAFR/SAFAR.exe
+    move SAFOR64.exe SAFR/SAFOR64.exe
+    move SAFOR32.exe SAFR/SAFOR32.exe
   displayName: 'windows-build'
 
 - task: PublishBuildArtifacts@1

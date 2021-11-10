@@ -11,9 +11,9 @@
 #include <ext/stdio_filebuf.h>
 
 template<typename stream>
-stream* open_wide_stream(std::wstring file, const wchar_t* parameter){
+stream* open_wide_stream(const std::wstring& file, const wchar_t* parameter){
 	FILE* c_file = _wfopen(file.c_str(), parameter);
-	__gnu_cxx::stdio_filebuf<char>* buffer = new __gnu_cxx::stdio_filebuf<char>(c_file, std::ios_base::out | std::ios_base::binary , 100000);
+	__gnu_cxx::stdio_filebuf<char>* buffer = new __gnu_cxx::stdio_filebuf<char>(c_file, std::ios_base::out | std::ios_base::binary , 2000000);
 	
 	return new stream(buffer);
 }
