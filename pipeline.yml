@@ -19,7 +19,7 @@ steps:
     move boost_1_76_0\boost boost
     C:\ProgramData\Chocolatey\bin\windres.exe --input SAFOR32.rc --output SAFOR32.res --output-format=coff --target pe-i386
     C:\ProgramData\Chocolatey\bin\windres.exe --input SAFOR64.rc --output SAFOR64.res --output-format=coff --target pe-x86-64
-    C:\ProgramData\Chocolatey\bin\g++ SAFOR.cpp -o SAFOR64.exe SAFOR64.res -msse2 -Ofast -m64 -std=c++17 -I"." -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
+    C:\ProgramData\Chocolatey\bin\g++ SAFOR.cpp -o SAFOR64.exe SAFOR64.res -msse2 -Ofast -m64 -std=c++17 -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
     dir
     mkdir SAFR 
     move SAFOR64.exe SAFR/SAFOR64.exe
