@@ -622,8 +622,6 @@ int main(int argc, char** argv) {
 	while(winapi_garbage::GetMode() < 0);
 	VelocityMode = (winapi_garbage::RemovalModeLine == 2);
 	RemovingSustains = (winapi_garbage::RemovalModeLine == 1);
-	std::cout << VelocityMode << " " << RemovingSustains << std::endl; 
-	
 	OverlapsRemover WRK;
 	if(VelocityMode){
 		if (argc <= 1) {
