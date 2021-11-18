@@ -3,7 +3,7 @@
 
 #define VER_MAJOR	1
 #define VER_MINOR	3
-#define VER_RELEASE	0
+#define VER_RELEASE	1
 #define VER_BUILD	0
 #define EXTR(x) x
 #define VAL(x) EXTR(x)
@@ -12,7 +12,7 @@
 #define VER_STRING	STR(VAL(VER_MAJOR)) "." STR(VAL(VER_MINOR)) "." STR(VAL(VER_RELEASE)) "." STR(VAL(VER_BUILD))
 #define COMPANY_NAME	"DixelU"
 #define FILE_VERSION	VER_STRING
-#define FILE_DESCRIPTION	"MIDI Overlaps remover"
+#define FILE_DESCRIPTION	"SAF Overlaps Remover"
 #define INTERNAL_NAME	"SAFOR"
 #define LEGAL_COPYRIGHT	""
 #define LEGAL_TRADEMARKS	""

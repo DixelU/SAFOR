@@ -74,9 +74,7 @@ bool PriorityPredicate(const NoteObject& O, NoteObject& N) { //old and new//0 - 
 	else if (O.Key == 0xFF && N.TrackN < O.TrackN)return 0;
 	else if (N.TrackN > O.TrackN && N.Len < O.Len)return 0;
 	else if (N.TrackN == O.TrackN && N.Len < O.Len)return 0;
-	else if (!RemovingSustains && O.Vol > N.Vol) { //N.Vol=O.Vol;
-		N.Vol = O.Vol;
-	}
+	else if (O.Vol > N.Vol) N.Vol = O.Vol;
 	return 1;
 }
 std::ostream& operator<<(std::ostream& stream, const NoteObject& a) {
