@@ -1,7 +1,7 @@
 #include <windows.h> 
 #include "SAFOR_version.h"
 
-A ICON "pic/SAFOR32.ico"
+A ICON "pic/SAFOR.ico"
 
 1 RT_MANIFEST SAFOR32.manifest
 
