@@ -361,9 +361,9 @@ struct OverlapsRemover {
 		std::cout << "Single pass scan has started... it might take a while...\n";
 		auto Y = NoteSet.begin();
 		UnsigedLongInt _Counter = 0;
-		PrepairedEvent Event;
 		NoteObject Note;//prev out, out
 		while (Y != NoteSet.end()) {
+			PrepairedEvent Event;
 			Note = *Y;
 			if (!(Note.Key ^ 0xFF)) {
 				Event.Tick = Note.Tick;
@@ -503,19 +503,25 @@ struct OverlapsRemover {
 		std::vector<DWORD> PERKEYMAP;
 		std::vector<TrackSymbol> KEYVEC;
 		NoteObject ImNote;
-		TrackSymbol VecInsertable;
 		UnsigedLongInt T, size, LastEdge = 0;
-		if (!NoteSet.size())return;
+		if (!NoteSet.size()) return;
 		auto Y = --NoteSet.end();
 		for (int key = 0; key < 128; key++) {
 			ImNote.Key = key;
 			ImNote.Vol = 1;
 			Y = NoteSet.begin();
+			UnsigedLongInt furthest_tick = 0;
 			while (Y != NoteSet.end()) {
 				if ((*Y).Key == key) {
+					auto EndPosition = (*Y).Tick + (*Y).Len;
+					if(furthest_tick < EndPosition)
+						furthest_tick = EndPosition;
+						
+					TrackSymbol VecInsertable;
 					VecInsertable.Tick = (*Y).Tick;
 					VecInsertable.TrackN = (*Y).TrackN;
 					VecInsertable.Len = (*Y).Len;
+					
 					KEYVEC.push_back(VecInsertable);
 					Y = NoteSet.erase(Y);
 					continue;
@@ -527,17 +533,18 @@ struct OverlapsRemover {
 			if (KEYVEC.empty())
 				continue;
 			printf("Set traveral ended with %u keys\n", KEYVEC.size());
-			printf("Expected size: %u\n", (KEYVEC.back().Tick + KEYVEC.back().Len)); // hell
-			if (KEYVEC.back().Tick + KEYVEC.back().Len >= PERKEYMAP.size()) {
-				PERKEYMAP.resize(KEYVEC.back().Tick + KEYVEC.back().Len, 0);
+			printf("Expected size: %u\n", furthest_tick); // hell
+			furthest_tick++; // important for note-off event detection. 
+			if (furthest_tick >= PERKEYMAP.size()) {
+				PERKEYMAP.resize(furthest_tick, 0);
 				printf("Key map expansion %u\n", PERKEYMAP.size());
 			}
 			for (auto it = KEYVEC.begin(); it != KEYVEC.end(); ++it) {
 				size = (*it).Tick + (*it).Len;
-				if (size > PERKEYMAP.size()) {
+				/*if (size > PERKEYMAP.size()) {
 					printf("Resize to %u from %u\n", size, PERKEYMAP.size());
 					PERKEYMAP.resize(size, 0);
-				}
+				}*/
 				PERKEYMAP[(*it).Tick] = ((*it).TrackN << 1) | 1;
 				for (UnsigedLongInt tick = (*it).Tick + 1; tick < size; ++tick)
 					PERKEYMAP[tick] = ((*it).TrackN << 1);
