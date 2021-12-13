@@ -7,7 +7,6 @@
 #include <iterator>
 #include <list>
 #include <map>
-#include <boost/container/flat_set.hpp>
 #include <thread>
 
 #include "winapi_garbage.h"

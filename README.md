@@ -1,11 +1,12 @@
-# SAFOR
-**Simple And Fast** ***Overlaps Remover***
+# SAFOR - **Simple And Fast** ***Overlaps Remover***   
 
-A console application which allows to create midis without any note *doubling* or *overlaping* with keeping the same visuals as in original midi.
-Sadly it *does* load file in memory, but every new event goes through some filtering therfore allowing to keep only *important* notes.
+![example workflow](https://github.com/DixelU/SAFOR/actions/workflows/build.yml/badge.svg)
+
+<p align="center">
+<img src="https://user-images.githubusercontent.com/26818917/145869604-80f60168-6c98-44b9-9fe0-4eab5597d748.png" data-canonical-src="https://user-images.githubusercontent.com/26818917/145869604-80f60168-6c98-44b9-9fe0-4eab5597d748.png" width="200" height="200" />
+</p>
+
+A console application which allows to process MIDIs, removing any note *doubling* or *overlaping* while keeping the same visuals as they are presented in the original MIDI.
+Sadly it *does* load file in memory, but every new event goes through some filtering, therfore allowing to keep only *important* notes.
 
 Appreciate issue reporting :)
-
-> How do i compile this thing?
-
-Look up into pipeline.yaml ;D
