@@ -1,1 +1,50 @@
+name: SAFOR_build
 
+on:
+  push:
+    branches: 
+      - master
+      - develop
+      - develop-*
+  pull_request:
+    branches: 
+      - master
+      - develop
+  workflow_dispatch:
+
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    name: build
+    # The type of runner that the job will run on
+    runs-on: 'windows-2019'
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      - uses: actions/checkout@v2
+      - name: Dependencies
+      - run: |
+          pip3 install wget
+          python download_boost_fast.py
+          7z x -y boost.zip
+          move boost_1_76_0\boost boost
+      
+      - name: Build
+      - run: |
+          C:\ProgramData\Chocolatey\bin\windres.exe --input SAFOR32.rc --output SAFOR32.res --output-format=coff --target pe-i386
+          C:\ProgramData\Chocolatey\bin\windres.exe --input SAFOR64.rc --output SAFOR64.res --output-format=coff --target pe-x86-64
+          C:\ProgramData\Chocolatey\bin\g++ SAFOR.cpp -o SAFOR64.exe SAFOR64.res -msse2 -Ofast -m64 -std=c++17 -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
+          
+      - name: Upload preparations
+      - run: |
+          dir
+          mkdir SAFOR 
+          move SAFOR64.exe SAFOR/SAFOR64.exe
+      
+      - name: Upload
+      - uses: actions/upload-artifact@v2
+      - with: 
+          name: SAFOR
+          path: SAFOR
