@@ -1,4 +1,4 @@
-name: SAFOR_build
+name: SAFOR
 
 on:
   push:
