@@ -24,27 +24,19 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       - uses: actions/checkout@v2
-      - name: Dependencies
+      - name: Build
       - run: |
           pip3 install wget
           python download_boost_fast.py
           7z x -y boost.zip
           move boost_1_76_0\boost boost
-      
-      - uses: actions/checkout@v2
-      - name: Build
-      - run: |
           C:\ProgramData\Chocolatey\bin\windres.exe --input SAFOR32.rc --output SAFOR32.res --output-format=coff --target pe-i386
           C:\ProgramData\Chocolatey\bin\windres.exe --input SAFOR64.rc --output SAFOR64.res --output-format=coff --target pe-x86-64
           C:\ProgramData\Chocolatey\bin\g++ SAFOR.cpp -o SAFOR64.exe SAFOR64.res -msse2 -Ofast -m64 -std=c++17 -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
-          
-      - uses: actions/checkout@v2
-      - name: Upload preparations
-      - run: |
           dir
           mkdir SAFOR 
           move SAFOR64.exe SAFOR/SAFOR64.exe
-      
+
       - uses: actions/upload-artifact@v2
       - name: Upload
       - with: 
