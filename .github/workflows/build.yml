@@ -20,13 +20,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-        
-      - name: Dependencies
-        run: |
-          pip3 install wget
-          python download_boost_fast.py
-          7z x -y boost.zip
-          move boost_1_76_0\boost boost
       - name: Build
         run: |
           C:\ProgramData\Chocolatey\bin\windres.exe --input SAFOR32.rc --output SAFOR32.res --output-format=coff --target pe-i386
