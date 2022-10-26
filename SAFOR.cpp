@@ -51,6 +51,7 @@ struct TrackSymbol {
 	LeastTopEdge Tick;
 	DWORD Len;
 	DWORD TrackN;
+	KeyDataType Velocity;
 };
 bool operator<(const PrepairedEvent& a, const PrepairedEvent& b) {
 	if (a.Tick < b.Tick)return 1;
@@ -504,11 +505,10 @@ struct OverlapsRemover {
 		NoteObject ImNote;
 		UnsigedLongInt T, size, LastEdge = 0;
 		if (!NoteSet.size()) return;
-		auto Y = --NoteSet.end();
 		for (int key = 0; key < 128; key++) {
 			ImNote.Key = key;
 			ImNote.Vol = 1;
-			Y = NoteSet.begin();
+			auto Y = NoteSet.begin();
 			UnsigedLongInt furthest_tick = 0;
 			while (Y != NoteSet.end()) {
 				if ((*Y).Key == key) {
@@ -520,6 +520,7 @@ struct OverlapsRemover {
 					VecInsertable.Tick = (*Y).Tick;
 					VecInsertable.TrackN = (*Y).TrackN;
 					VecInsertable.Len = (*Y).Len;
+					VecInsertable.Velocity = (*Y).Vol;
 					
 					KEYVEC.push_back(VecInsertable);
 					Y = NoteSet.erase(Y);
@@ -540,13 +541,15 @@ struct OverlapsRemover {
 			}
 			for (auto it = KEYVEC.begin(); it != KEYVEC.end(); ++it) {
 				size = (*it).Tick + (*it).Len;
-				/*if (size > PERKEYMAP.size()) {
-					printf("Resize to %u from %u\n", size, PERKEYMAP.size());
-					PERKEYMAP.resize(size, 0);
-				}*/
-				PERKEYMAP[(*it).Tick] = ((*it).TrackN << 1) | 1;
+				
+				auto& currentTickData = PERKEYMAP[(*it).Tick];
+				auto velocity = (std::max)(
+					(unsigned char)((currentTickData >> 1) & 0xFF), 
+					(*it).Velocity);
+				currentTickData = ((*it).TrackN << (1 + 8)) | (velocity << 1) | 1;
+				
 				for (UnsigedLongInt tick = (*it).Tick + 1; tick < size; ++tick)
-					PERKEYMAP[tick] = ((*it).TrackN << 1);
+					PERKEYMAP[tick] = (((*it).TrackN << (1 + 8)) /*| (velocity << 1)*/);
 			}
 			printf("Key map traversal ended\n");
 			KEYVEC.clear();
@@ -554,14 +557,16 @@ struct OverlapsRemover {
 			LastEdge = 0;
 			size = PERKEYMAP.size();
 			while (T < size) {
-				LastEdge = T;
+				//LastEdge = T;
 				for (++T; T < size; ++T) {
-					if (PERKEYMAP[T] >> 1 != PERKEYMAP[T - 1] >> 1 || PERKEYMAP[T] & 1) {
+					if ((PERKEYMAP[T] >> (1 + 8)) != (PERKEYMAP[T - 1] >> (1 + 8)) || (PERKEYMAP[T] & 1)) {
 						ImNote.Len = T - LastEdge;
 						ImNote.Tick = LastEdge;
-						ImNote.TrackN = (PERKEYMAP[T - 1] >> 1);
+						ImNote.TrackN = (PERKEYMAP[T - 1] >> (1 + 8));
+						ImNote.Vol = ((PERKEYMAP[LastEdge] >> 1) & 0xFF);
 						LastEdge = T;
-						if (ImNote.TrackN)NoteSet.insert(ImNote);
+						if (ImNote.TrackN)
+							NoteSet.insert(ImNote);
 						break;
 					}
 				} 
