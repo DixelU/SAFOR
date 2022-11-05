@@ -497,7 +497,7 @@ struct OverlapsRemover {
 			Track.clear();
 			Y++;
 		}
-		//fout.close();
+		fout.flush();
 	}
 	void MapNotesAndReadBack() {
 		std::vector<DWORD> PERKEYMAP;
