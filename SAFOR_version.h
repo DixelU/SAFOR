@@ -3,7 +3,7 @@
 
 #define VER_MAJOR	1
 #define VER_MINOR	3
-#define VER_RELEASE	4
+#define VER_RELEASE	5
 #define VER_BUILD	0
 #define EXTR(x) x
 #define VAL(x) EXTR(x)
