@@ -168,7 +168,7 @@ struct OverlapsRemover {
 			PushedCount++;
 			auto e_pair = NoteSet.equal_range(Ev);
 			if (NoteSet.size() && e_pair.first != NoteSet.end()) {
-				auto current_p = e_pair.first;
+				auto& current_p = e_pair.first;
 				auto rightmost = *(--e_pair.second);
 				while (current_p != NoteSet.end() && (!(*current_p < rightmost) && !(rightmost < *current_p))) {
 					if (PriorityPredicate(*current_p, Ev)) {
@@ -395,7 +395,7 @@ struct OverlapsRemover {
 			Y = NoteSet.erase(Y);
 		}
 		NoteSet.clear();
-		std::cout << "Single pass scan has finished... Notecount: " << _Counter << std::endl;
+		std::cout << "Single pass scan has finished... Notecount: " << DumpCounter + _Counter << std::endl;
 	}
 	inline uint8_t push_vlv(uint32_t value, std::vector<BYTE>& vec) {
 		constexpr uint8_t $7byte_mask = 0x7F, max_size = 5, $7byte_mask_size = 7;
