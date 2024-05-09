@@ -19,20 +19,22 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Build
         run: |
           windres.exe --input SAFOR32.rc --output SAFOR32.res --output-format=coff --target pe-i386
           windres.exe --input SAFOR64.rc --output SAFOR64.res --output-format=coff --target pe-x86-64
           g++ SAFOR.cpp -o SAFOR64.exe SAFOR64.res -msse2 -Ofast -m64 -std=c++17 -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
+          g++ SAFOR.cpp -o SAFOR32.exe SAFOR32.res -msse2 -Ofast -m32 -std=c++17 -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
       - name: Upload preps
         run: |
           dir
           mkdir SAFOR 
           move SAFOR64.exe SAFOR/SAFOR64.exe
+          move SAFOR32.exe SAFOR/SAFOR32.exe
 
       - uses: actions/download-artifact@v4
-        name: Upload
+        name: Upload Artifact
         with: 
-          name: SAFOR
+          name: SAFOR-${{ matrix.runs-on }}
           path: SAFOR
