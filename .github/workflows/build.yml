@@ -20,8 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
+      #- name: Setup tmate session
+      #  uses: mxschmitt/action-tmate@v3
       - name: Build 32 bit resource
         run: windres.exe --input SAFOR32.rc --output SAFOR32.res --output-format=coff --target pe-i386
       - name: Build 64 bit resource
