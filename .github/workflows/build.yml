@@ -20,10 +20,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      #- name: Test
-      #  run: dir C:/mingw64/x86_64-w64-mingw32/bin
-      #- name: Build 32 bit resource
-      #  run: windres.exe --input SAFOR32.rc --output SAFOR32.res --output-format=coff --target pe-i386
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+      - name: Dummy
+        run: timeout 1000
+      - name: Build 32 bit resource
+        run: windres.exe --input SAFOR32.rc --output SAFOR32.res --output-format=coff --target pe-i386
       - name: Build 64 bit resource
         run: windres.exe --input SAFOR64.rc --output SAFOR64.res --output-format=coff --target pe-x86-64
       - name: Build 64 bit executable
