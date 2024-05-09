@@ -27,7 +27,7 @@ jobs:
       - name: Build 64 bit executable
         run: g++ SAFOR.cpp -o SAFOR64.exe SAFOR64.res -msse2 -Ofast -m64 -std=c++17 -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
       - name: Build 32 bit executable
-        run: g++ SAFOR.cpp -o SAFOR32.exe SAFOR32.res -msse2 -Ofast -m32 -std=c++17 -L"C:/mingw64/x86_64-w64-mingw32/lib32" -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
+        run: mingw-w64-i686-g++ SAFOR.cpp -o SAFOR32.exe SAFOR32.res -msse2 -Ofast -m32 -std=c++17 -L"C:/mingw64/x86_64-w64-mingw32/lib32" -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
       - name: Upload preps
         run: |
           dir
