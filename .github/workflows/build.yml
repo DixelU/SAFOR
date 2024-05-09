@@ -40,5 +40,5 @@ jobs:
       - uses: actions/download-artifact@v4
         name: Upload Artifact
         with: 
-          name: SAFOR-${{ matrix.runs-on }}
+          name: SAFOR
           path: SAFOR
