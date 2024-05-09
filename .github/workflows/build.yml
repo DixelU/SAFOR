@@ -32,7 +32,7 @@ jobs:
         run: g++ SAFOR.cpp -o SAFOR64.exe SAFOR64.res -msse2 -Ofast -m64 -std=c++17 -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
       - name: Build 32 bit executable
         shell: bash
-        run: /c/mingw32/bin/g++.exe SAFOR.cpp -o SAFOR32.exe SAFOR32.res -msse2 -Ofast -m32 -std=c++17 -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
+        run: PATH=/c/mingw32/bin /c/mingw32/bin/g++.exe SAFOR.cpp -o SAFOR32.exe SAFOR32.res -msse2 -Ofast -m32 -std=c++17 -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
       - name: Upload preps
         run: |
           dir
