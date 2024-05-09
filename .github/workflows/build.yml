@@ -33,12 +33,12 @@ jobs:
       - name: Upload preps
         run: |
           dir
-          mkdir SAFOR 
-          move SAFOR64.exe SAFOR/SAFOR64.exe
-      #    move SAFOR32.exe SAFOR/SAFOR32.exe
+          mkdir prebuilt 
+          move SAFOR64.exe prebuilt/SAFOR64.exe
+      #    move SAFOR32.exe prebuilt/SAFOR32.exe
 
       - uses: actions/download-artifact@v4
         name: Upload Artifact
         with: 
-          name: SAFOR
-          path: SAFOR
+          name: SAFOR Cloud Build
+          path: prebuilt
