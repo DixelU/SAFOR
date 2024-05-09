@@ -28,14 +28,14 @@ jobs:
         run: windres.exe --input SAFOR64.rc --output SAFOR64.res --output-format=coff --target pe-x86-64
       - name: Build 64 bit executable
         run: g++ SAFOR.cpp -o SAFOR64.exe SAFOR64.res -msse2 -Ofast -m64 -std=c++17 -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
-      #- name: Build 32 bit executable
-      #  run: C:\msys64\mingw32\bin\i686-w64-mingw32-g++ SAFOR.cpp -o SAFOR32.exe SAFOR32.res -msse2 -Ofast -m32 -std=c++17 -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
+      - name: Build 32 bit executable
+        run: C:/mingw32/bin/g++.exe SAFOR.cpp -o SAFOR32.exe SAFOR32.res -msse2 -Ofast -m32 -std=c++17 -I"." -static -lgdi32 -lcomdlg32 -luuid -luxtheme -lcomctl32 -s
       - name: Upload preps
         run: |
           dir
           mkdir prebuilt 
           move SAFOR64.exe prebuilt/SAFOR64.exe
-      #    move SAFOR32.exe prebuilt/SAFOR32.exe
+          move SAFOR32.exe prebuilt/SAFOR32.exe
 
       - uses: actions/upload-artifact@v4
         name: Upload Artifact
