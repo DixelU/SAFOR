@@ -14,8 +14,8 @@
 #include "bbb_ffio.h"
 
 #include "btree/btree.h"
-#include "btree/btree_set.h"
-#include "btree/btree_map.h"
+#include "btree/set.h"
+#include "btree/map.h"
 
 using UnsigedLongInt = unsigned long long int;
 using LeastTopEdge = UnsigedLongInt;			//Least top edge // Tick / len...
@@ -85,9 +85,9 @@ struct OverlapsRemover {
 	BYTE RunningStatus;
 	WORD PPQN;
 	DWORD CurrentTrack;
-	btree::btree_multiset<NoteObject> NoteSet;
-	btree::btree_multiset<TrackNumberType> TracksSet;
-	btree::btree_map<DWORD, btree::btree_multiset<PrepairedEvent>> MappedNotesSet;
+	btree::multiset<NoteObject> NoteSet;
+	btree::multiset<TrackNumberType> TracksSet;
+	btree::map<DWORD, btree::multiset<PrepairedEvent>> MappedNotesSet;
 	std::array<std::deque<UnsigedLongInt>, 2048> Polyphony;//first 128 is first channel, next 128 are the second... etc
 	bbb_ffr* FileInput;
 	OverlapsRemover() {
@@ -427,8 +427,8 @@ struct OverlapsRemover {
 			)), L"wb");
 		std::ostream& fout = *pfstr;
 		auto Y = MappedNotesSet.begin();
-		btree::btree_multiset<PrepairedEvent>::iterator U;
-		btree::btree_multiset<PrepairedEvent>* pMS;
+		btree::multiset<PrepairedEvent>::iterator U;
+		btree::multiset<PrepairedEvent>* pMS;
 		PrepairedEvent Event, PrevEvent;
 		if (dbg)
 			printf("Output..\n");
