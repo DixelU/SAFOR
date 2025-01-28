@@ -43,7 +43,7 @@ struct NoteObject { //
 	TrackNumberType TrackN;
 	DWORD Len;
 };
-struct PrepairedEvent {
+struct PreparedEvent {
 	LeastTopEdge Tick;
 	BYTE A, B, C, D;
 };
@@ -53,7 +53,7 @@ struct TrackSymbol {
 	DWORD TrackN;
 	KeyDataType Velocity;
 };
-bool operator<(const PrepairedEvent& a, const PrepairedEvent& b) {
+bool operator<(const PreparedEvent& a, const PreparedEvent& b) {
 	if (a.Tick < b.Tick)return 1;
 	else return 0;
 }
@@ -87,7 +87,7 @@ struct OverlapsRemover {
 	DWORD CurrentTrack;
 	btree::multiset<NoteObject> NoteSet;
 	btree::multiset<TrackNumberType> TracksSet;
-	btree::map<DWORD, btree::multiset<PrepairedEvent>> MappedNotesSet;
+	btree::map<DWORD, btree::multiset<PreparedEvent>> MappedNotesSet;
 	std::array<std::deque<UnsigedLongInt>, 2048> Polyphony;//first 128 is first channel, next 128 are the second... etc
 	bbb_ffr* FileInput;
 	OverlapsRemover() {
@@ -363,7 +363,7 @@ struct OverlapsRemover {
 		UnsigedLongInt _Counter = 0;
 		NoteObject Note;//prev out, out
 		while (Y != NoteSet.end()) {
-			PrepairedEvent Event;
+			PreparedEvent Event;
 			Note = *Y;
 			if (!(Note.Key ^ 0xFF)) {
 				Event.Tick = Note.Tick;
@@ -427,9 +427,9 @@ struct OverlapsRemover {
 			)), L"wb");
 		std::ostream& fout = *pfstr;
 		auto Y = MappedNotesSet.begin();
-		btree::multiset<PrepairedEvent>::iterator U;
-		btree::multiset<PrepairedEvent>* pMS;
-		PrepairedEvent Event, PrevEvent;
+		btree::multiset<PreparedEvent>::iterator U;
+		btree::multiset<PreparedEvent>* pMS;
+		PreparedEvent Event, PrevEvent;
 		if (dbg)
 			printf("Output..\n");
 		fout.put('M');
@@ -595,7 +595,7 @@ struct OverlapsRemover {
 			Y++;
 		}
 
-		if (dbg)printf("Prepaired for output...\n");
+		if (dbg)printf("Prepared for output...\n");
 		std::cout << "Tracks used: " << TracksSet.size() << std::endl;
 		FormMIDI(Link);
 	}
