@@ -523,7 +523,7 @@ struct OverlapsRemover
 		std::cout << "Single pass scan has finished... Note count: " << dump_counter + _counter << std::endl;
 	}
 
-	static uint8_t push_vlv(uint32_t value, std::vector<BYTE>& vec)
+	static uint8_t push_vlv(uint32_t value, std::vector<std::uint8_t>& vec)
 	{
 		constexpr uint8_t $7byte_mask = 0x7F, max_size = 5, $7byte_mask_size = 7;
 		constexpr uint8_t $adjacent7byte_mask = ~$7byte_mask;
