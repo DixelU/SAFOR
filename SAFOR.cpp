@@ -1,12 +1,10 @@
 #include <iostream>
-#include <set>
 #include <string>
 #include <stack>
 #include <vector>
 #include <fstream>
 #include <iterator>
-#include <list>
-#include <map>
+#include <array>
 #include <thread>
 
 #include "winapi_garbage.h"
@@ -17,387 +15,508 @@
 #include "btree/set.h"
 #include "btree/map.h"
 
-using UnsigedLongInt = unsigned long long int;
-using LeastTopEdge = UnsigedLongInt;			//Least top edge // Tick / len...
-using TrackNumberType = DWORD;					//track number type
-using KeyDataType = BYTE;						//key data type
+using local_uint_t = std::uint64_t;
+using smallest_tick_t = local_uint_t;			//Least top edge // Tick / len...
+using track_n_t = std::uint32_t;					//track number type
+using parameter_t = std::uint8_t;
 
-constexpr auto VOLUMEMASK = ((UnsigedLongInt)0xFFFFFFFFFFFFFF);
-constexpr DWORD MTHD = 1297377380;
-constexpr DWORD MTRK = 1297379947;
+constexpr local_uint_t VELOCITY_MASK = 0xFFFFFFFFFFFFFFULL;
+constexpr std::uint32_t MTHD = 1297377380;
+constexpr std::uint32_t MTRK = 1297379947;
 
 //#pragma pack(push, 1)
 
-bool VelocityMode = false;
-bool RemovingSustains = false;
-unsigned char MinimalVolume = 0;
+bool velocity_mode = false;
+bool sustains_removal = false;
+unsigned char min_velocity = 0;
 
-bool dbg = 1;
+constexpr bool dbg = true;
 
-UnsigedLongInt Notecount = 0, PushedCount = 0, OverlapslessCount = 0;
+local_uint_t note_count = 0, pushed_count = 0, total_count = 0;
 
-struct NoteObject { //
-	LeastTopEdge Tick;
-	KeyDataType Key;//0xWWQQ ww-findable/seekable state, QQ-key itself
-	mutable BYTE Vol;
-	TrackNumberType TrackN;
-	DWORD Len;
+struct NoteObject
+{
+	smallest_tick_t tick;
+	std::uint32_t length;
+	parameter_t key;
+	track_n_t track;
+	mutable std::uint8_t velocity;
 };
-struct PrepairedEvent {
-	LeastTopEdge Tick;
-	BYTE A, B, C, D;
+
+struct RawEvent
+{
+	smallest_tick_t tick;
+	std::uint8_t a, b, c, d;
 };
-struct TrackSymbol {
-	LeastTopEdge Tick;
-	DWORD Len;
-	DWORD TrackN;
-	KeyDataType Velocity;
+
+struct TrackSymbol
+{
+	smallest_tick_t tick;
+	std::uint32_t length;
+	std::uint32_t track;
+	parameter_t velocity;
 };
-bool operator<(const PrepairedEvent& a, const PrepairedEvent& b) {
-	if (a.Tick < b.Tick)return 1;
-	else return 0;
-}
-bool operator<(const NoteObject& a, const NoteObject& b) {
-	if (a.Tick < b.Tick)return 1;
-	else if (a.Tick == b.Tick) {
-		if (a.Key < b.Key)return 1;
-		else return 0;
-	}
-	else return 0;
-}
-bool operator<(const TrackSymbol& a, const TrackSymbol& b) {
-	if (a.Tick < b.Tick)return 1;
-	else return 0;
-}
-bool PriorityPredicate(const NoteObject& O, NoteObject& N) { //old and new//0 - save both//1 replce O with N
-	if (O.Key != N.Key || O.Tick != N.Tick)return 0;//
-	else if (O.Key == 0xFF && N.TrackN < O.TrackN)return 0;
-	else if (N.TrackN > O.TrackN && N.Len < O.Len)return 0;
-	else if (N.TrackN == O.TrackN && N.Len < O.Len)return 0;
-	else if (O.Vol > N.Vol) N.Vol = O.Vol;
-	return 1;
-}
-std::ostream& operator<<(std::ostream& stream, const NoteObject& a) {
-	return (stream << "K" << (int)a.Key << "L" << a.Len << "T" << a.Tick << "TN" << a.TrackN);
+
+bool operator<(const RawEvent& a, const RawEvent& b)
+{
+	return a.tick < b.tick;
 }
 
-struct OverlapsRemover {
-	BYTE RunningStatus;
-	WORD PPQN;
-	DWORD CurrentTrack;
-	btree::multiset<NoteObject> NoteSet;
-	btree::multiset<TrackNumberType> TracksSet;
-	btree::map<DWORD, btree::multiset<PrepairedEvent>> MappedNotesSet;
-	std::array<std::deque<UnsigedLongInt>, 2048> Polyphony;//first 128 is first channel, next 128 are the second... etc
-	bbb_ffr* FileInput;
-	OverlapsRemover() {
-		RunningStatus = PPQN = CurrentTrack = 0;
+bool operator<(const NoteObject& a, const NoteObject& b)
+{
+	if (a.tick < b.tick)
+		return true;
+
+	if (a.tick == b.tick)
+		return a.key < b.key;
+
+	return false;
+}
+
+bool operator<(const TrackSymbol& a, const TrackSymbol& b)
+{
+	return a.tick < b.tick;
+}
+
+bool priority_predicate(const NoteObject& O, const NoteObject& N)
+{
+	//old and new //false - save both//true - replace O with N
+	if (O.key != N.key || O.tick != N.tick)
+		return false;
+
+	if (O.key == 0xFF && N.track < O.track)
+		return false;
+
+	if (N.track > O.track && N.length < O.length)
+		return false;
+
+	if (N.track == O.track && N.length < O.length)
+		return false;
+
+	if (O.velocity > N.velocity)
+		N.velocity = O.velocity;
+
+	return true;
+}
+
+std::ostream& operator<<(std::ostream& stream, const NoteObject& a)
+{
+	return
+		stream <<
+			"K" << static_cast<int>(a.key) <<
+			"L" << a.length <<
+			"T" << a.tick <<
+			"TN" << a.track;
+}
+
+struct OverlapsRemover
+{
+	parameter_t rsb_byte;
+	std::uint16_t ppq_value;
+	track_n_t current_track;
+
+	btree::multiset<NoteObject> note_set;
+	btree::multiset<track_n_t> tracks_set;
+	btree::map<track_n_t, btree::multiset<RawEvent>> mapped_notes_set;
+
+	// the first 128 is the first channel, next 128 are the second... etc.
+	std::array<std::deque<local_uint_t>, 2048> poly;
+	bbb_ffr* file_input;
+
+	OverlapsRemover():
+		rsb_byte(0),
+		ppq_value(0),
+		current_track(0),
+		file_input(nullptr)
+	{}
+
+	static void ostream_write(
+		std::vector<std::uint8_t>& vec,
+		const std::vector<std::uint8_t>::iterator& beg,
+		const std::vector<std::uint8_t>::iterator& end,
+		std::ostream& out)
+	{
+		const auto offset = beg - vec.begin();
+		out.write(
+			reinterpret_cast<char*>(vec.data()) + offset,
+			end - beg);
 	}
-	static void ostream_write(std::vector<BYTE>& vec, const std::vector<BYTE>::iterator& beg,
-		const std::vector<BYTE>::iterator& end, std::ostream& out) {
-		out.write(((char*)vec.data()) + (beg - vec.begin()), end - beg);
+
+	static void ostream_write(
+		std::vector<std::uint8_t>& vec,
+		std::ostream& out)
+	{
+		out.write(reinterpret_cast<char*>(vec.data()), vec.size());
 	}
-	static void ostream_write(std::vector<BYTE>& vec, std::ostream& out) {
-		out.write(((char*)vec.data()), vec.size());;
-	}
-	void ClearPolyphony() {
-		for (auto& polyphonyStack: Polyphony)
+
+	void clear_polyphony()
+	{
+		for (auto& polyphonyStack: poly)
 			polyphonyStack.clear();
 	}
-	void InitializeNPrepare(std::wstring link) {
-		FileInput = new bbb_ffr(link.c_str());
-		std::cout << "File buffer size: " << FileInput->tell_bufsize() << std::endl;
-		DWORD MThd = 0;
-		BYTE ByteVariable;
-		for (int i = 0; i < 4; i++) {
-			ByteVariable = FileInput->get();
-			MThd = (MThd << 8) | (ByteVariable);
-		}
-		std::cout << (FileInput->eof() ? "EOF" : "File opened") << std::endl;
-		if (MThd == MTHD) {
+
+	void initialize(const std::wstring& link)
+	{
+		file_input = new bbb_ffr(link.c_str());
+		std::cout << "File buffer size: " << file_input->tell_bufsize() << std::endl;
+
+		std::uint32_t MThd = 0;
+		for (int i = 0; i < 4; i++)
+			MThd = (MThd << 8) | (file_input->get());
+
+		std::cout << (file_input->eof() ? "EOF" : "File opened") << std::endl;
+		if (MThd == MTHD)
+		{
+			// skip header entirely
 			for (int i = 0; i < 8; i++)
-				FileInput->get();
-			for (int i = 0; i < 2; i++) {
-				ByteVariable = (*FileInput).get();
-				PPQN = (PPQN << 8) | (ByteVariable);
-			}
-			NoteSet.clear();
-			RunningStatus = 0;
-			CurrentTrack = 0;
+				file_input->get();
+
+			for (int i = 0; i < 2; i++)
+				ppq_value = (ppq_value << 8) | (file_input->get());
+
+			note_set.clear();
+			rsb_byte = 0;
+			current_track = 0;
+
 			if (dbg)
 				printf("Header\n");
 		}
-		else {
-			(*FileInput).close();
+		else
+		{
+			file_input->close();
 			std::cout << "Input file doesn't begin with MThd" << std::endl;
 		}
 	}
-	bool ReadSingleTrackFromCurPos() { //continue?
-		DWORD MTrk = 0;
-		RunningStatus = 0;
-		UnsigedLongInt CurrentTick = 0;//current tick
-		DWORD RealTick = 0;//real tick (which we just read)
-		ClearPolyphony();
-		for (int i = 0; i < 4 && !(*FileInput).eof() && (*FileInput).good(); i++)
-			MTrk = (MTrk << 8) | (*FileInput).get();
-		while (MTrk != MTRK && !(*FileInput).eof() && (*FileInput).good()) { 
-			MTrk = (MTrk << 8) | (*FileInput).get();
+
+	// returns whether reading shall continue or not
+	bool read_single_track()
+	{
+		rsb_byte = 0;
+
+		std::uint32_t MTrk = 0;
+		local_uint_t current_tick = 0; //current tick
+		std::uint32_t real_tick = 0; //real tick (which we just read)
+
+		clear_polyphony();
+
+		// seek the header no matter the junk we've found:
+		for (int i = 0; i < 4 && !file_input->eof() && file_input->good(); i++)
+			MTrk = (MTrk << 8) | file_input->get();
+		while (MTrk != MTRK && !file_input->eof() && file_input->good())
+			MTrk = (MTrk << 8) | file_input->get();
+
+		for (int i = 0; i < 4 && !file_input->bad(); i++)
+			file_input->get(); //itterating through track's length
+
+		while (!file_input->bad() && !file_input->eof())
+		{
+			real_tick = read_vlv();
+			if (!parse_event(current_tick += real_tick))
+				return true;
 		}
-		for (int i = 0; i < 4 && !(*FileInput).bad(); i++)
-			(*FileInput).get(); //itterating through track's lenght
-		while (!(*FileInput).bad() && !(*FileInput).eof()) {
-			RealTick = ReadVLV();
-			if (!ParseEvent(CurrentTick += RealTick))
-				return 1;
-		}
-		return 0;
+
+		return false;
 	}
-	DWORD CountMomentalPolyphony() { //debug purposes
-		DWORD N = 0;
-		for (int i = 0; i < 2048; i++)
-			N += Polyphony[i].size();
+
+	//for debug purposes
+	std::uint32_t get_total_poly() const
+	{
+		std::uint32_t N = 0;
+		for (auto i = 0; i < 2048; i++)
+			N += poly[i].size();
+
 		return N;
 	}
-	void PushNote(NoteObject& Ev) {
-		OverlapslessCount++;
-		if(VelocityMode) {
-			if (Ev.Vol < MinimalVolume && Ev.Key < 0xFF) 
+
+	void smart_push(NoteObject& event)
+	{
+		total_count++;
+		if(velocity_mode)
+		{
+			if (event.velocity < min_velocity && event.key < 0xFF)
 				return;
 		}
-		else {
-			PushedCount++;
-			auto e_pair = NoteSet.equal_range(Ev);
-			if (NoteSet.size() && e_pair.first != NoteSet.end()) {
+		else
+		{
+			pushed_count++;
+			auto e_pair = note_set.equal_range(event);
+			if (!note_set.empty() && e_pair.first != note_set.end())
+			{
 				auto& current_p = e_pair.first;
-				auto rightmost = *(--e_pair.second);
-				while (current_p != NoteSet.end() && (!(*current_p < rightmost) && !(rightmost < *current_p))) {
-					if (PriorityPredicate(*current_p, Ev)) {
-						current_p = NoteSet.erase(current_p);
-						OverlapslessCount--;
+				const auto& rightmost = *(--e_pair.second);
+				while (current_p != note_set.end() && (!(*current_p < rightmost) && !(rightmost < *current_p)))
+				{
+					if (priority_predicate(*current_p, event))
+					{
+						current_p = note_set.erase(current_p);
+						total_count--;
 					}
 					else
-						current_p++;
+						++current_p;
 				}
 			}
 		}
-		NoteSet.insert(Ev);
+
+		note_set.insert(event);
 	}
-	DWORD ReadVLV() { //from current position
-		DWORD VLV = 0;
-		BYTE B = 0;
-		if (!(*FileInput).eof() && !(*FileInput).bad()) {
-			do {
-				B = (*FileInput).get();
-				VLV = (VLV << 7) | (B & 0x7F);
-			} while (B & 0x80);
-			return VLV;
-		}
-		else {
-			if (0)std::cout << "Failed to read VLV at " << (*FileInput).tellg() << std::endl;
+
+	std::uint32_t read_vlv() const
+	{
+		if (file_input->eof() || file_input->bad())
+		{
+			if (false)
+				std::cout << "Failed to read vlv at " << file_input->tellg() << std::endl;
 			return 0;
 		}
-	}
-	UnsigedLongInt FindAndPopOut(LeastTopEdge pos, UnsigedLongInt CTick) {
-		UnsigedLongInt q = Polyphony[pos].size();
-		if (q > 0) {
-			q = (Polyphony[pos].front());
-			Polyphony[pos].pop_front();
-			return q;
-		}
-		else {
-			if (0)
-				std::cout << "FaPO error " << pos << " " << CTick << std::endl;
-			return CTick | (VOLUMEMASK + 1);
-		}
-	}
-	bool ParseEvent(UnsigedLongInt absTick) { //should we continue?
-		BYTE ByteVar1, ByteVar2;
-		LeastTopEdge pos;
-		UnsigedLongInt FAPO;
-		if (!(*FileInput).bad() && !(*FileInput).eof()) {
-			ByteVar1 = (*FileInput).get();
-			if (ByteVar1 >= 0x80 && ByteVar1 <= 0x8F) { //NOTEOFF
-				RunningStatus = ByteVar1;
-				Notecount++;
-				ByteVar1 = (*FileInput).get() & 0x7F;
-				pos = ((RunningStatus & 0x0F) << 7) | ByteVar1;//position of stack for this key/channel pair
-				(*FileInput).get();
-				NoteObject Event;//event push prepairings
-				Event.Key = ByteVar1;
-				Event.TrackN = (RunningStatus & 0x0F) | ((CurrentTrack) << 4);
-				if (!Polyphony[pos].empty()) {
-					FAPO = FindAndPopOut(pos, absTick);
-					Event.Tick = FAPO & VOLUMEMASK;
-					Event.Len = absTick - Event.Tick;
-					Event.Vol = FAPO >> 56;
-					PushNote(Event);
-				}
-				else if (0)std::cout << "Detected empty stack pop-attempt (N):" << (unsigned int)(RunningStatus & 0x0F) << '-' << (unsigned int)ByteVar1 << std::endl;
-			}
-			else if (ByteVar1 >= 0x90 && ByteVar1 <= 0x9F) { //NOTEON
-				RunningStatus = ByteVar1;
-				ByteVar1 = (*FileInput).get() & 0x7F;
-				ByteVar2 = (*FileInput).get() & 0x7F;
-				pos = ((RunningStatus & 0x0F) << 7) | ByteVar1;
-				if (ByteVar2 != 0)
-					Polyphony[pos].push_front(absTick | (((UnsigedLongInt)ByteVar2) << 56));
-				else { //quite weird way to represent note off event...
-					NoteObject Event;//event push prepairings
-					Event.Key = ByteVar1;
-					Event.TrackN = (RunningStatus & 0x0F) | ((CurrentTrack) << 4);
-					if (!Polyphony[pos].empty()) {
-						FAPO = FindAndPopOut(pos, absTick);
-						Event.Tick = FAPO & VOLUMEMASK;
-						Event.Len = absTick - Event.Tick;
-						Event.Vol = FAPO >> 56;
-						PushNote(Event);
-					}
-					else if (0)std::cout << "Detected empty stack pop-attempt (0):" << (RunningStatus & 0x0F) << '-' << (unsigned int)ByteVar1 << std::endl;
-				}
-			}
-			else if ((ByteVar1 >= 0xA0 && ByteVar1 <= 0xBF) || (ByteVar1 >= 0xE0 && ByteVar1 <= 0xEF)) { //stupid unusual vor visuals stuff
-				RunningStatus = ByteVar1;
-				(*FileInput).get();
-				(*FileInput).get();
-			}
-			else if (ByteVar1 >= 0xC0 && ByteVar1 <= 0xDF) {
-				RunningStatus = ByteVar1;
-				(*FileInput).get();
-			}
-			else if (ByteVar1 >= 0xF0 && ByteVar1 <= 0xF7) {
-				RunningStatus = 0;
-				DWORD vlv = ReadVLV();
-				for (int i = 0; i < vlv; i++)(*FileInput).get();
-			}
-			else if (ByteVar1 == 0xFF) {
-				RunningStatus = 0;
-				ByteVar1 = (*FileInput).get();
-				DWORD vlv = 0;
-				if (ByteVar1 == 0x2F) {
-					//if(dbg)printf("endoftrack\n");
-					ReadVLV();
-					return 0;
-				}
-				else if (ByteVar1 == 0x51) {
-					(*FileInput).get();//vlv
-					for (int i = 0; i < 3; i++) { //tempochange data
-						ByteVar1 = (*FileInput).get();
-						vlv = (vlv << 8) | ByteVar1;
-					}//in vlv we have tempo data :)
 
-					NoteObject Event;//event push prepairings
-					Event.Key = 0xFF;
-					Event.TrackN = 0;
-					Event.Tick = absTick;
-					Event.Len = vlv;
-					PushNote(Event);
-				}
-				else {
-					vlv = ReadVLV();
-					for (int i = 0; i < vlv; i++)
-						(*FileInput).get();
-				}
-			}
-			else {
-				if (RunningStatus >= 0x80 && RunningStatus <= 0x8F) { //NOTEOFF
-					Notecount++;
-					(*FileInput).get();//same
-					pos = ((RunningStatus & 0x0F) << 7) | ByteVar1;//position of stack for this key/channel pair
-					NoteObject Event;//event push prepairings
-					Event.Key = ByteVar1;
-					Event.TrackN = (RunningStatus & 0x0F) | ((CurrentTrack) << 4);
-					if (!Polyphony[pos].empty()) {
-						FAPO = FindAndPopOut(pos, absTick);
-						Event.Tick = FAPO & VOLUMEMASK;
-						Event.Len = absTick - Event.Tick;
-						Event.Vol = FAPO >> 56;
-						PushNote(Event);
-					}
-					else if (0)std::cout << "Detected empty stack pop-attempt (RN):" << (unsigned int)(RunningStatus & 0x0F) << '-' << (unsigned int)ByteVar1 << std::endl;
-				}
-				else if (RunningStatus >= 0x90 && RunningStatus <= 0x9F) { //NOTEON
-					ByteVar2 = (*FileInput).get() & 0x7F;//magic finished//volume
-					pos = ((RunningStatus & 0x0F) << 7) | ByteVar1;
-					if (ByteVar2 != 0)
-						Polyphony[pos].push_front(absTick | (((UnsigedLongInt)ByteVar2) << 56));
-					else { //quite weird way to represent note off event...
-						NoteObject Event;//event push prepairings
-						Event.Key = ByteVar1;
-						Event.TrackN = (RunningStatus & 0x0F) | ((CurrentTrack) << 4);
-						if (!Polyphony[pos].empty()) {
-							FAPO = FindAndPopOut(pos, absTick);
-							Event.Tick = FAPO & VOLUMEMASK;
-							Event.Len = absTick - Event.Tick;
-							Event.Vol = FAPO >> 56;
-							PushNote(Event);
-						}
-						else if (0)std::cout << "Detected empty stack pop-attempt (R0):" << (unsigned int)(RunningStatus & 0x0F) << '-' << (unsigned int)ByteVar1 << std::endl;
-					}
-				}
-				else if ((RunningStatus >= 0xA0 && RunningStatus <= 0xBF) || (RunningStatus >= 0xE0 && RunningStatus <= 0xEF)) { //stupid unusual for visuals stuff
-					(*FileInput).get();
-				}
-				else if (RunningStatus >= 0xC0 && RunningStatus <= 0xDF) { }
-				else {
-					std::cout << "Imparseable data...\n\tdebug:" << (unsigned int)RunningStatus << ":" << (unsigned int)ByteVar1 << ":Off(FBegin):";
-					printf("%x\n", (*FileInput).tellg());
-					BYTE I = 0, II = 0, III = 0;
-					while (!(I == 0xFF && II == 0x2F && III == 0) && !(*FileInput).eof()) {
-						I = II;
-						II = III;
-						III = (*FileInput).get();
-					}
-					(*FileInput).get();
-					return 0;
-				}
-			}
+		std::uint32_t value = 0;
+		std::uint8_t byte = 0;
+
+		do
+		{
+			byte = file_input->get();
+			value = (value << 7) | (byte & 0x7F);
 		}
-		else return 0;
-		return 1;
+		while (byte & 0x80);
+
+		return value;
 	}
-	void SinglePassMapFiller() {
-		const UnsigedLongInt EDGE_LOGGER = 5000000;
-		UnsigedLongInt DumpCounter = 0;
+
+	local_uint_t pop_note_on(smallest_tick_t pos, local_uint_t requested_data)
+	{
+		if (poly[pos].empty())
+		{
+			if (false)
+				std::cout << "pop error " << pos << " " << requested_data << std::endl;
+
+			// current tick with volume = 1
+			return requested_data | (VELOCITY_MASK + 1);
+		}
+
+		// isn't it the opposite?
+		const auto data = poly[pos].back();
+		poly[pos].pop_back();
+
+		return data;
+	}
+
+	// returns whether the current track can be read further
+	bool parse_event(local_uint_t current_tick)
+	{
+		if (file_input->bad() || file_input->eof())
+			return false;
+
+		auto event_header = file_input->get();
+
+		// RSB handling
+		uint8_t first_param = 0;
+		if (event_header < 0x80 )
+		{
+			first_param = event_header;
+			event_header = rsb_byte;
+		}
+		else if (event_header <= 0xF0)
+			first_param = file_input->get();
+
+		if (event_header >= 0x80 && event_header <= 0x8F)
+		{
+			rsb_byte = event_header;
+			note_count++;
+
+			const auto key = first_param & 0x7F;
+
+			//position of stack for this key/channel pair
+			const auto pos = ((rsb_byte & 0x0F) << 7) | key;
+
+			// aftertouch doesn't matter
+			file_input->get();
+
+			NoteObject note;
+			note.key = key;
+			note.track = (rsb_byte & 0x0F) | ((current_track) << 4);
+			if (poly[pos].empty())
+			{
+				// log something here?
+				return true;
+			}
+
+			const auto note_on_data =
+				pop_note_on(pos, current_tick);
+
+			note.tick = note_on_data & VELOCITY_MASK;
+			note.length = current_tick - note.tick;
+			note.velocity = note_on_data >> 56;
+
+			smart_push(note);
+		}
+		else if (event_header >= 0x90 && event_header <= 0x9F)
+		{
+			rsb_byte = event_header;
+
+			const std::uint8_t key = first_param & 0x7F;
+			const std::uint8_t volume = file_input->get() & 0x7F;
+
+			//position of stack for this key/channel pair
+			const auto pos = ((rsb_byte & 0x0F) << 7) | event_header;
+
+			if (volume != 0)
+			{
+				poly[pos].push_front(current_tick | (static_cast<local_uint_t>(volume) << 56));
+				return true;
+			}
+
+			// otherwise this is a note off event
+			NoteObject note;
+			note.key = key;
+			note.track = (rsb_byte & 0x0F) | ((current_track) << 4);
+
+			if (poly[pos].empty())
+			{
+				// log something here?
+				return true;
+			}
+
+			const auto note_on_data =
+				pop_note_on(pos, current_tick);
+
+			note.tick = note_on_data & VELOCITY_MASK;
+			note.length = current_tick - note.tick;
+			note.velocity = note_on_data >> 56;
+
+			smart_push(note);
+		}
+		else if ((event_header >= 0xA0 && event_header <= 0xBF) || (event_header >= 0xE0 && event_header <= 0xEF))
+		{
+			rsb_byte = event_header;
+
+			file_input->get();
+		}
+		else if (event_header >= 0xC0 && event_header <= 0xDF)
+		{
+			rsb_byte = event_header;
+		}
+		else if (event_header >= 0xF0 && event_header <= 0xF7)
+		{
+			rsb_byte = 0;
+
+			const auto vlv = read_vlv();
+			for (auto i = 0; i < vlv; i++)
+				file_input->get();
+		}
+		else if (event_header == 0xFF)
+		{
+			rsb_byte = 0;
+
+			const auto meta_kind = file_input->get();
+			std::uint32_t vlv = read_vlv();
+
+			if (meta_kind == 0x2F)
+			{
+				// merge tracks here?
+				return false;
+			}
+
+			if (meta_kind == 0x51)
+			{
+				for (int i = 0; i < vlv; i++)
+				{
+					//tempochange data
+					auto byte = file_input->get();
+					vlv = (vlv << 8) | byte;
+				} // in vlv we have tempo data :)
+
+				// 0xFF key is "mapped" tempo event data
+				NoteObject Event;
+				Event.key = 0xFF;
+				Event.track = 0;
+				Event.tick = current_tick;
+				Event.length = vlv;
+
+				smart_push(Event);
+			}
+			else
+				for (int i = 0; i < vlv; i++)
+					file_input->get();
+		}
+		else
+		{
+			std::cout << "Invalid data\n\tat: " <<
+				static_cast<unsigned int>(rsb_byte) << "; " <<
+				static_cast<unsigned int>(event_header) << "; "
+				"at 0x" << std::hex << file_input->tellg() << std::dec << std::endl ;
+
+			// bruh;
+			std::uint8_t I = 0, II = 0, III = 0;
+			while (!(I == 0xFF && II == 0x2F && III == 0) && !file_input->eof())
+			{
+				I = II;
+				II = III;
+				III = file_input->get();
+			}
+
+			return false;
+		}
+
+		return true;
+	}
+
+	void single_pass_filter()
+	{
+		constexpr local_uint_t log_trigger = 5000000;
+		local_uint_t dump_counter = 0;
+
 		std::cout << "Single pass scan has started... it might take a while...\n";
-		auto Y = NoteSet.begin();
-		UnsigedLongInt _Counter = 0;
-		NoteObject Note;//prev out, out
-		while (Y != NoteSet.end()) {
-			PrepairedEvent Event;
-			Note = *Y;
-			if (!(Note.Key ^ 0xFF)) {
-				Event.Tick = Note.Tick;
-				Event.A = 0x03;
-				Event.B = (Note.Len & 0xFF0000) >> 16;
-				Event.C = (Note.Len & 0xFF00) >> 8;
-				Event.D = (Note.Len & 0xFF);
-				MappedNotesSet[Note.TrackN].insert(Event);
+		local_uint_t _counter = 0;
+
+		auto iter = note_set.begin();
+		while (iter != note_set.end())
+		{
+			RawEvent event;
+			auto& Note = *iter;
+			auto& track_ref = mapped_notes_set[Note.track];
+
+			if (Note.key == 0xFF)
+			{
+				event.tick = Note.tick;
+				event.a = 0x03;
+				event.b = (Note.length & 0xFF0000) >> 16;
+				event.c = (Note.length & 0xFF00) >> 8;
+				event.d = (Note.length & 0xFF);
+				track_ref.insert(event);
 			}
-			else {
-				Note.Key &= 0xFF;
-				Event.Tick = Note.Tick;//noteon event
-				Event.A = 0;
-				Event.B = 0x90 | (Note.TrackN & 0xF);
-				Event.C = Note.Key;
-				Event.D = ((Note.Vol) ? Note.Vol : 1);
-				MappedNotesSet[Note.TrackN].insert(Event);
-				Event.Tick += Note.Len;//note off event
-				Event.B ^= 0x10;
-				Event.D = 0x40;
-				MappedNotesSet[Note.TrackN].insert(Event);
-				_Counter++;
-				if (_Counter >= EDGE_LOGGER) {
-					printf("Single pass scan: %u note\n", _Counter);
-					DumpCounter += _Counter;
-					_Counter = 0;
+			else
+			{
+				// Note ON event
+				event.tick = Note.tick;
+				event.a = 0;
+				event.b = 0x90 | (Note.track & 0xF);
+				event.c = Note.key;
+				event.d = ((Note.velocity) ? Note.velocity : 1);
+				track_ref.insert(event);
+
+				// Note OFF event
+				event.tick += Note.length;
+				event.b ^= 0x10;
+				event.d = 0x40;
+				track_ref.insert(event);
+
+				_counter++;
+				if (_counter >= log_trigger)
+				{
+					printf("Single pass scan: %llu notes put\n", dump_counter + _counter);
+					dump_counter += _counter;
+					_counter = 0;
 				}
 			}
-			Y = NoteSet.erase(Y);
+			iter = note_set.erase(iter);
 		}
-		NoteSet.clear();
-		std::cout << "Single pass scan has finished... Notecount: " << DumpCounter + _Counter << std::endl;
+		note_set.clear();
+
+		std::cout << "Single pass scan has finished... Note count: " << dump_counter + _counter << std::endl;
 	}
-	inline uint8_t push_vlv(uint32_t value, std::vector<BYTE>& vec) {
+
+	static uint8_t push_vlv(uint32_t value, std::vector<BYTE>& vec)
+	{
 		constexpr uint8_t $7byte_mask = 0x7F, max_size = 5, $7byte_mask_size = 7;
 		constexpr uint8_t $adjacent7byte_mask = ~$7byte_mask;
 		uint8_t stack[max_size];
@@ -415,23 +534,20 @@ struct OverlapsRemover {
 			vec.push_back(stack[--size]);
 		return r_size;
 	};
-	void FormMIDI(std::wstring Link) {
+
+	void write_midi(const std::wstring& path)
+	{
 		printf("Starting enhanced output algorithm\n");
-		SinglePassMapFiller();
-		std::vector<BYTE> Track;
-		
-		auto pfstr = open_wide_stream<std::ostream>((Link + (
-			(VelocityMode)?
+		single_pass_filter();
+		std::vector<std::uint8_t> track_data;
+
+		auto pfstr = open_wide_stream<std::ostream>((path + (
+			(velocity_mode)?
 			L".AR.mid" :
-			((RemovingSustains) ? L".SOR.mid" : L".OR.mid" )
+			((sustains_removal) ? L".SOR.mid" : L".OR.mid" )
 			)), L"wb");
 		std::ostream& fout = *pfstr;
-		auto Y = MappedNotesSet.begin();
-		btree::multiset<PrepairedEvent>::iterator U;
-		btree::multiset<PrepairedEvent>* pMS;
-		PrepairedEvent Event, PrevEvent;
-		if (dbg)
-			printf("Output..\n");
+
 		fout.put('M');
 		fout.put('T');
 		fout.put('h');
@@ -442,221 +558,283 @@ struct OverlapsRemover {
 		fout.put(6);
 		fout.put(0);
 		fout.put(1);
-		fout.put((char)((TracksSet.size() >> 8)));
-		fout.put((char)((TracksSet.size() & 0xFF)));
-		fout.put((char)(PPQN >> 8));
-		fout.put((char)(PPQN & 0xFF));
-		TracksSet.clear();
-		if (dbg)printf("Header...\n");
-		while (Y != MappedNotesSet.end()) {
-			Track.push_back('M');
-			Track.push_back('T');
-			Track.push_back('r');
-			Track.push_back('k');
-			Track.push_back(0);//size
-			Track.push_back(0);//of
-			Track.push_back(0);//track
-			Track.push_back(0);//aslkflkasdflksdf
-			if (dbg)printf("Track header...\nCurrent track size: %d\n", (*Y).second.size());
-			pMS = &((*Y).second);
-			U = pMS->begin();
-			Event.Tick = 0;
-			if (dbg)printf("Converting back to MIDI standard\n");
-			while (U != pMS->end()) {
-				PrevEvent = Event;
-				Event = *U;
-				DWORD tTick = Event.Tick - PrevEvent.Tick, clen = 0;
-				push_vlv(tTick, Track);
-				if (Event.A == 0x03) {
-					Track.push_back(0xFF);
-					Track.push_back(0x51);
-					Track.push_back(Event.A);//03
-					Track.push_back(Event.B);
-					Track.push_back(Event.C);
-					Track.push_back(Event.D);
+		fout.put(static_cast<char>((tracks_set.size() >> 8)));
+		fout.put(static_cast<char>((tracks_set.size() & 0xFF)));
+		fout.put(static_cast<char>(ppq_value >> 8));
+		fout.put(static_cast<char>(ppq_value & 0xFF));
+
+		tracks_set.clear();
+
+		auto note_maps_iter = mapped_notes_set.begin();
+		while (note_maps_iter != mapped_notes_set.end())
+		{
+			track_data.push_back('M');
+			track_data.push_back('T');
+			track_data.push_back('r');
+			track_data.push_back('k');
+			track_data.push_back(0); // size
+			track_data.push_back(0); // of
+			track_data.push_back(0); // track
+			track_data.push_back(0); // placeholder
+
+			if (dbg)
+				printf("Current track size: %lld\n\tConverting track back to MIDI standard\n", note_maps_iter->second.size());
+
+			smallest_tick_t previous_tick = 0;
+			auto iter = note_maps_iter->second.begin();
+			while (iter != note_maps_iter->second.end())
+			{
+				auto event = *iter;
+				const std::uint32_t tTick = event.tick - previous_tick;
+
+				/*auto length = */push_vlv(tTick, track_data);
+				if (event.a == 0x03)
+				{
+					track_data.push_back(0xFF);
+					track_data.push_back(0x51);
+					track_data.push_back(0x03);
+					track_data.push_back(event.b);
+					track_data.push_back(event.c);
+					track_data.push_back(event.d);
 				}
-				else {
-					Track.push_back(Event.B);
-					Track.push_back(Event.C);
-					Track.push_back(Event.D);
+				else
+				{
+					track_data.push_back(event.b);
+					track_data.push_back(event.c);
+					track_data.push_back(event.d);
 				}
-				U++; //= pMS->erase(U);
+
+				previous_tick = event.tick;
+				++iter; //= pMS->erase(U);
 			}
-			pMS->clear();
-			Track.push_back(0x00);
-			Track.push_back(0xFF);
-			Track.push_back(0x2F);
-			Track.push_back(0x00);
-			DWORD sz = Track.size() - 8;
-			Track[4] = (sz & 0xFF000000) >> 24;
-			Track[5] = (sz & 0xFF0000) >> 16;
-			Track[6] = (sz & 0xFF00) >> 8;
-			Track[7] = (sz & 0xFF);
-			ostream_write(Track, fout);
-			if (dbg)printf("Track %u went to output\n", (*Y).first);
-			Track.clear();
-			Y++;
+			note_maps_iter->second.clear();
+
+			track_data.push_back(0x00);
+			track_data.push_back(0xFF);
+			track_data.push_back(0x2F);
+			track_data.push_back(0x00);
+
+			std::uint32_t size = track_data.size() - 8;
+			track_data[4] = (size & 0xFF000000) >> 24;
+			track_data[5] = (size & 0xFF0000) >> 16;
+			track_data[6] = (size & 0xFF00) >> 8;
+			track_data[7] = (size & 0xFF);
+			ostream_write(track_data, fout);
+
+			if (dbg)
+				printf("Track %u went to output\n", note_maps_iter->first);
+			track_data.clear();
+
+			++note_maps_iter;
 		}
+
 		fout.flush();
 	}
-	void MapNotesAndReadBack() {
-		std::vector<DWORD> PERKEYMAP;
-		std::vector<TrackSymbol> KEYVEC;
-		NoteObject ImNote;
-		UnsigedLongInt T, size, LastEdge = 0;
-		if (!NoteSet.size()) return;
-		for (int key = 0; key < 128; key++) {
-			ImNote.Key = key;
-			ImNote.Vol = 1;
-			auto Y = NoteSet.begin();
-			UnsigedLongInt furthest_tick = 0;
-			while (Y != NoteSet.end()) {
-				if ((*Y).Key == key) {
-					auto EndPosition = (*Y).Tick + (*Y).Len;
-					if(furthest_tick < EndPosition)
-						furthest_tick = EndPosition;
-						
-					TrackSymbol VecInsertable;
-					VecInsertable.Tick = (*Y).Tick;
-					VecInsertable.TrackN = (*Y).TrackN;
-					VecInsertable.Len = (*Y).Len;
-					VecInsertable.Velocity = (*Y).Vol;
-					
-					KEYVEC.push_back(VecInsertable);
-					Y = NoteSet.erase(Y);
+
+	void notes_remapping() // sustain removal
+	{
+		std::vector<std::uint32_t> single_key_data;
+		std::vector<TrackSymbol> key_vector;
+
+		local_uint_t size;
+
+		if (note_set.empty())
+			return;
+
+		for (int key = 0; key < 128; key++)
+		{
+			NoteObject ImNote;
+			ImNote.key = key;
+			ImNote.velocity = 1;
+
+			auto iter = note_set.begin();
+			local_uint_t furthest_tick = 0;
+
+			while (iter != note_set.end())
+			{
+				if (iter->key != key)
+				{
+					++iter;
 					continue;
 				}
-				else {
-					Y++;
-				}
+
+				const auto note_ending = iter->tick + iter->length;
+				if(furthest_tick < note_ending)
+					furthest_tick = note_ending;
+
+				TrackSymbol insertable;
+				insertable.tick = iter->tick;
+				insertable.track = iter->track;
+				insertable.length = iter->length;
+				insertable.velocity = iter->velocity;
+
+				key_vector.push_back(insertable);
+				iter = note_set.erase(iter);
 			}
-			if (KEYVEC.empty())
+
+			if (key_vector.empty())
 				continue;
-			printf("Set traveral ended with %u keys\n", KEYVEC.size());
-			printf("Expected size: %u\n", furthest_tick); // hell
-			furthest_tick++; // important for note-off event detection. 
-			if (furthest_tick >= PERKEYMAP.size()) {
-				PERKEYMAP.resize(furthest_tick, 0);
-				printf("Key map expansion %u\n", PERKEYMAP.size());
+
+			printf("Set traversal ended with %llu keys\n", key_vector.size());
+			printf("Expected extra memory consumption: %llu\n bytes", furthest_tick);
+
+			furthest_tick++; // important for note-off event detection.
+
+			if (furthest_tick >= single_key_data.size())
+			{
+				single_key_data.resize(furthest_tick, 0);
+				printf("Key map expansion %llu\n", single_key_data.size());
 			}
-			for (auto it = KEYVEC.begin(); it != KEYVEC.end(); ++it) {
-				size = (*it).Tick + (*it).Len;
-				
-				auto& currentTickData = PERKEYMAP[(*it).Tick];
-				auto velocity = (std::max)(
-					(unsigned char)((currentTickData >> 1) & 0xFF), 
-					(*it).Velocity);
-				currentTickData = ((*it).TrackN << (1 + 8)) | (velocity << 1) | 1;
-				
-				for (UnsigedLongInt tick = (*it).Tick + 1; tick < size; ++tick)
-					PERKEYMAP[tick] = (((*it).TrackN << (1 + 8)) /*| (velocity << 1)*/);
+
+			for (auto & track_symbol : key_vector)
+			{
+				size = track_symbol.tick + track_symbol.length;
+				auto& current_tick_data = single_key_data[track_symbol.tick];
+
+				const auto velocity = (std::max)(
+					static_cast<unsigned char>((current_tick_data >> 1) & 0xFF),
+					track_symbol.velocity);
+				current_tick_data = (track_symbol.track << (1 + 8)) | (velocity << 1) | 1;
+
+				for (local_uint_t tick = track_symbol.tick + 1; tick < size; ++tick)
+					single_key_data[tick] = ((track_symbol.track << (1 + 8)) /*| (velocity << 1)*/);
 			}
+
 			printf("Key map traversal ended\n");
-			KEYVEC.clear();
-			T = 0;
-			LastEdge = 0;
-			size = PERKEYMAP.size();
-			while (T < size) {
+			key_vector.clear();
+
+			local_uint_t index = 0;
+			local_uint_t last_detected_edge = 0;
+			size = single_key_data.size();
+
+			// todo: sparse remap for 32k ppq, high bpm midis (foreshadowing)
+			while (index < size)
+			{
 				//LastEdge = T;
-				for (++T; T < size; ++T) {
-					if ((PERKEYMAP[T] >> (1 + 8)) != (PERKEYMAP[T - 1] >> (1 + 8)) || (PERKEYMAP[T] & 1)) {
-						ImNote.Len = T - LastEdge;
-						ImNote.Tick = LastEdge;
-						ImNote.TrackN = (PERKEYMAP[T - 1] >> (1 + 8));
-						ImNote.Vol = ((PERKEYMAP[LastEdge] >> 1) & 0xFF);
-						LastEdge = T;
-						if (ImNote.TrackN)
-							NoteSet.insert(ImNote);
+				for (++index; index < size; ++index)
+				{
+					if ((single_key_data[index] >> (1 + 8)) != (single_key_data[index - 1] >> (1 + 8)) || (single_key_data[index] & 1))
+					{
+						ImNote.length = index - last_detected_edge;
+						ImNote.tick = last_detected_edge;
+						ImNote.track = (single_key_data[index - 1] >> (1 + 8));
+						ImNote.velocity = ((single_key_data[last_detected_edge] >> 1) & 0xFF);
+						last_detected_edge = index;
+						if (ImNote.track)
+							note_set.insert(ImNote);
+
 						break;
 					}
-				} 
+				}
 			}
-			PERKEYMAP.clear();
+			single_key_data.clear();
+
 			printf("Key %d processed in sustains removing algorithm\n", key);
 		}
 	}
-	void Load(std::wstring Link) {
-		InitializeNPrepare(Link);
+
+	void process(const std::wstring& path)
+	{
+		initialize(path);
+
 		printf("Notecount : Successfully pushed notes (Count) : Notes and tempo count without overlaps\n");
-		CurrentTrack = 2;//fix//
-		while (ReadSingleTrackFromCurPos()) {
-			CurrentTrack++;
-			std::cout << Notecount << " : " << PushedCount << " : " << OverlapslessCount << std::endl;
+
+		current_track = 2;
+		while (read_single_track())
+		{
+			current_track++;
+			std::cout << note_count << " : " << pushed_count << " : " << total_count << std::endl;
 		}
-		(*FileInput).close();
+		file_input->close();
 
-		if (dbg)printf("Magic finished with set size %d...\n", NoteSet.size());
-		if (dbg && RemovingSustains) printf("Notecount might increase after remapping the MIDI\n");
-		if (RemovingSustains) MapNotesAndReadBack();
+		if (dbg)
+			printf("Magic finished with set size %lld...\n", note_set.size());
+		if (dbg && sustains_removal)
+			printf("Note count might increase after remapping the MIDI\n");
+		if (sustains_removal)
+			notes_remapping();
 
-		auto Y = NoteSet.begin();
-		while (Y != NoteSet.end()) {
-			if (TracksSet.find((*Y).TrackN) == TracksSet.end()) TracksSet.insert(((*Y).TrackN));
-			Y++;
+		auto iter = note_set.begin();
+		while (iter != note_set.end())
+		{
+			if (tracks_set.find(iter->track) == tracks_set.end())
+				tracks_set.insert((iter->track));
+			++iter;
 		}
 
-		if (dbg)printf("Prepaired for output...\n");
-		std::cout << "Tracks used: " << TracksSet.size() << std::endl;
-		FormMIDI(Link);
+		if (dbg)
+			printf("Ready for output...\n");
+		std::cout << "Tracks used: " << tracks_set.size() << std::endl;
+
+		write_midi(path);
 	}
 };
 
-std::wstring OpenFileDialog(const wchar_t* Title) {
-	OPENFILENAMEW ofn;       // common dialog box structure
-	wchar_t szFile[1000];       // buffer for file name
-	std::vector<std::wstring> InpLinks;
+std::wstring open_file_dialog(const wchar_t* Title)
+{
+	OPENFILENAMEW ofn;
+	wchar_t filepath_buffer[1000];
 	ZeroMemory(&ofn, sizeof(ofn));
-	ZeroMemory(szFile, 1000);
+	ZeroMemory(filepath_buffer, 1000);
 	ofn.lStructSize = sizeof(ofn);
-	ofn.hwndOwner = NULL;
-	ofn.lpstrFile = szFile;
+	ofn.hwndOwner = nullptr;
+	ofn.lpstrFile = filepath_buffer;
 	ofn.lpstrFile[0] = '\0';
-	ofn.nMaxFile = sizeof(szFile);
+	ofn.nMaxFile = sizeof(filepath_buffer);
 	ofn.lpstrFilter = L"MIDI Files(*.mid)\0*.mid\0";
 	ofn.nFilterIndex = 1;
-	ofn.lpstrFileTitle = NULL;
+	ofn.lpstrFileTitle = nullptr;
 	ofn.lpstrTitle = Title;
 	ofn.nMaxFileTitle = 0;
-	ofn.lpstrInitialDir = NULL;
+	ofn.lpstrInitialDir = nullptr;
 	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER;
-	if (GetOpenFileNameW(&ofn)) {
-		return std::wstring(szFile);
-	}
-	else {
-		return L"";
-	}
+	if (GetOpenFileNameW(&ofn))
+		return {filepath_buffer};
+
+	return L"";
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
 	while(winapi_garbage::GetMode() < 0);
-	VelocityMode = (winapi_garbage::RemovalModeLine == 2);
-	RemovingSustains = (winapi_garbage::RemovalModeLine == 1);
-	OverlapsRemover WRK;
-	if(VelocityMode){
-		if (argc <= 1) {
+
+	velocity_mode = (winapi_garbage::RemovalModeLine == 2);
+	sustains_removal = (winapi_garbage::RemovalModeLine == 1);
+
+	if(velocity_mode)
+	{
+		if (argc <= 1)
+		{
 			while(winapi_garbage::GetTheshold() < 0);
-			MinimalVolume = winapi_garbage::VelocityThreshold;
+			min_velocity = winapi_garbage::VelocityThreshold;
 		}
 		else
-			MinimalVolume = std::stoi(std::string(argv[1]));
+			min_velocity = std::stoi(std::string(argv[1]));
+
 		printf("SAFOR. Art removing mode. Overlaps/sustains are not touched.\n");
 	}
-	else{
-		if (RemovingSustains)
+	else
+	{
+		if (sustains_removal)
 			printf("SAFSOR. Note remapping enabled. Velocity is not preserved.\n");
 		else
 			printf("SAFOR. Velocity Edition.\n");
 	}
+
 	std::cout << "\"Open file\" dialog should appear soon...\n";
-	std::wstring filenames;
-	while ((filenames = OpenFileDialog(L"Select MIDI File.")).empty());
-	if (filenames.size()) {
+	std::wstring filename;
+	while ((filename = open_file_dialog(L"Select MIDI File.")).empty());
+	if (!filename.empty())
+	{
+		OverlapsRemover worker;
 		std::cout << "Filename in ASCII: ";
-		for (auto& ch : filenames)
-			std::cout << (char)ch;
+		for (const auto& ch : filename)
+			std::cout << static_cast<char>(ch);
+
 		std::cout << std::endl;
-		WRK.Load(filenames);
+		worker.process(filename);
 	}
+
 	system("pause");
 	return 0;
 }
