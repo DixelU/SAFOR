@@ -25,8 +25,6 @@ constexpr local_uint_t VELOCITY_MASK = 0xFFFFFFFFFFFFFFULL;
 constexpr std::uint32_t MTHD = 1297377380;
 constexpr std::uint32_t MTRK = 1297379947;
 
-//#pragma pack(push, 1)
-
 bool velocity_mode = false;
 bool sustains_removal = false;
 unsigned char min_velocity = 0;
@@ -35,6 +33,7 @@ constexpr bool dbg = true;
 
 local_uint_t note_count = 0, pushed_count = 0, total_count = 0;
 
+#pragma pack(push, 4)
 struct NoteObject
 {
 	smallest_tick_t tick;
@@ -57,6 +56,7 @@ struct TrackSymbol
 	std::uint32_t track;
 	parameter_t velocity;
 };
+#pragma pack(pop)
 
 bool operator<(const RawEvent& a, const RawEvent& b)
 {
@@ -116,7 +116,7 @@ struct OverlapsRemover
 	std::uint16_t ppq_value;
 	track_n_t current_track;
 
-	std::multiset<NoteObject> note_set;
+	btree::multiset<NoteObject> note_set;
 	btree::multiset<track_n_t> tracks_set;
 	btree::map<track_n_t, btree::multiset<RawEvent>> mapped_notes_set;
 
@@ -248,9 +248,9 @@ struct OverlapsRemover
 		if (!note_set.empty() && begin != note_set.end())
 		{
 			auto current_iter = begin;
-			const auto rightmost = std::prev(end);
+			const auto rightmost = *std::prev(end);
 
-			while (current_iter != end && !(*current_iter < *rightmost) && !(*rightmost < *current_iter))
+			while (current_iter != note_set.end() && !(*current_iter < rightmost) && !(rightmost < *current_iter))
 			{
 				if (!priority_predicate(*current_iter, event))
 				{
@@ -264,7 +264,7 @@ struct OverlapsRemover
 			}
 		}
 
-		note_set.insert(end, event);
+		note_set.insert(event);
 	}
 
 	[[nodiscard]] std::uint32_t read_vlv() const
