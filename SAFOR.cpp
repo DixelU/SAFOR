@@ -236,29 +236,35 @@ struct OverlapsRemover
 		{
 			if (event.velocity < min_velocity && event.key < 0xFF)
 				return;
-		}
-		else
-		{
+
 			pushed_count++;
-			auto e_pair = note_set.equal_range(event);
-			if (!note_set.empty() && e_pair.first != note_set.end())
+			note_set.insert(event);
+			return;
+		}
+
+		pushed_count++;
+
+		auto [ begin, end ] = note_set.equal_range(event);
+		if (!note_set.empty() && begin != note_set.end())
+		{
+			auto current_iter = begin;
+			const auto rightmost = std::prev(end);
+
+			while (current_iter != end && !(*current_iter < *rightmost) && !(*rightmost < *current_iter))
 			{
-				auto& current_p = e_pair.first;
-				const auto& rightmost = *(--e_pair.second);
-				while (current_p != note_set.end() && (!(*current_p < rightmost) && !(rightmost < *current_p)))
+				if (!priority_predicate(*current_iter, event))
 				{
-					if (priority_predicate(*current_p, event))
-					{
-						current_p = note_set.erase(current_p);
-						total_count--;
-					}
-					else
-						++current_p;
+					++current_iter;
+					continue;
 				}
+
+				current_iter = note_set.erase(current_iter);
+
+				total_count--;
 			}
 		}
 
-		note_set.insert(event);
+		note_set.insert(end, event);
 	}
 
 	[[nodiscard]] std::uint32_t read_vlv() const
@@ -401,7 +407,7 @@ struct OverlapsRemover
 			rsb_byte = 0;
 
 			const auto vlv = read_vlv();
-			for (auto i = 0; i < vlv; i++)
+			for (auto i = 0u; i < vlv; i++)
 				file_input->get();
 		}
 		else if (event_header == 0xFF)
@@ -420,7 +426,7 @@ struct OverlapsRemover
 			if (meta_kind == 0x51)
 			{
 				std::uint32_t tempo_data = 0;
-				for (int i = 0; i < meta_length; i++)
+				for (auto i = 0u; i < meta_length; i++)
 				{
 					// tempo change data
 					auto byte = file_input->get();
@@ -437,7 +443,7 @@ struct OverlapsRemover
 				smart_push(event);
 			}
 			else
-				for (int i = 0; i < meta_length; i++)
+				for (auto i = 0u; i < meta_length; i++)
 					file_input->get();
 		}
 		else
@@ -807,7 +813,7 @@ int main(int argc, char** argv)
 	{
 		if (argc <= 1)
 		{
-			while(winapi_garbage::GetTheshold() < 0);
+			while(winapi_garbage::GetThreshold() < 0);
 			min_velocity = winapi_garbage::VelocityThreshold;
 		}
 		else
