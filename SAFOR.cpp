@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iterator>
 #include <array>
+#include <set>
 #include <thread>
 
 #include "winapi_garbage.h"
@@ -115,7 +116,7 @@ struct OverlapsRemover
 	std::uint16_t ppq_value;
 	track_n_t current_track;
 
-	btree::multiset<NoteObject> note_set;
+	std::multiset<NoteObject> note_set;
 	btree::multiset<track_n_t> tracks_set;
 	btree::map<track_n_t, btree::multiset<RawEvent>> mapped_notes_set;
 
@@ -151,8 +152,8 @@ struct OverlapsRemover
 
 	void clear_polyphony()
 	{
-		for (auto& polyphonyStack: poly)
-			polyphonyStack.clear();
+		for (auto& polyphony_stack: poly)
+			polyphony_stack.clear();
 	}
 
 	void initialize(const std::wstring& link)
@@ -194,8 +195,8 @@ struct OverlapsRemover
 		rsb_byte = 0;
 
 		std::uint32_t MTrk = 0;
-		local_uint_t current_tick = 0; //current tick
-		std::uint32_t real_tick = 0; //real tick (which we just read)
+		local_uint_t current_tick = 0;
+		std::uint32_t delta_time = 0;
 
 		clear_polyphony();
 
@@ -206,12 +207,12 @@ struct OverlapsRemover
 			MTrk = (MTrk << 8) | file_input->get();
 
 		for (int i = 0; i < 4 && !file_input->bad(); i++)
-			file_input->get(); //itterating through track's length
+			file_input->get(); // iterating through track's length
 
 		while (!file_input->bad() && !file_input->eof())
 		{
-			real_tick = read_vlv();
-			if (!parse_event(current_tick += real_tick))
+			delta_time = read_vlv();
+			if (!parse_event(current_tick += delta_time))
 				return true;
 		}
 
@@ -228,7 +229,7 @@ struct OverlapsRemover
 		return N;
 	}
 
-	void smart_push(NoteObject& event)
+	void smart_push(const NoteObject& event)
 	{
 		total_count++;
 		if(velocity_mode)
@@ -315,7 +316,7 @@ struct OverlapsRemover
 			first_param = event_header;
 			event_header = rsb_byte;
 		}
-		else if (event_header <= 0xF0)
+		else if (event_header < 0xF0)
 			first_param = file_input->get();
 
 		if (event_header >= 0x80 && event_header <= 0x8F)
@@ -357,11 +358,11 @@ struct OverlapsRemover
 			const std::uint8_t volume = file_input->get() & 0x7F;
 
 			//position of stack for this key/channel pair
-			const auto pos = ((rsb_byte & 0x0F) << 7) | event_header;
+			const auto pos = ((rsb_byte & 0x0F) << 7) | key;
 
 			if (volume != 0)
 			{
-				poly[pos].push_front(current_tick | (static_cast<local_uint_t>(volume) << 56));
+				poly[pos].push_back(current_tick | (static_cast<local_uint_t>(volume) << 56));
 				return true;
 			}
 
@@ -408,7 +409,7 @@ struct OverlapsRemover
 			rsb_byte = 0;
 
 			const auto meta_kind = file_input->get();
-			std::uint32_t vlv = read_vlv();
+			std::uint32_t meta_length = read_vlv();
 
 			if (meta_kind == 0x2F)
 			{
@@ -418,24 +419,25 @@ struct OverlapsRemover
 
 			if (meta_kind == 0x51)
 			{
-				for (int i = 0; i < vlv; i++)
+				std::uint32_t tempo_data = 0;
+				for (int i = 0; i < meta_length; i++)
 				{
-					//tempochange data
+					// tempo change data
 					auto byte = file_input->get();
-					vlv = (vlv << 8) | byte;
-				} // in vlv we have tempo data :)
+					tempo_data = (tempo_data << 8) | byte;
+				}
 
 				// 0xFF key is "mapped" tempo event data
 				NoteObject Event;
 				Event.key = 0xFF;
 				Event.track = 0;
 				Event.tick = current_tick;
-				Event.length = vlv;
+				Event.length = tempo_data;
 
 				smart_push(Event);
 			}
 			else
-				for (int i = 0; i < vlv; i++)
+				for (int i = 0; i < meta_length; i++)
 					file_input->get();
 		}
 		else
@@ -811,14 +813,14 @@ int main(int argc, char** argv)
 		else
 			min_velocity = std::stoi(std::string(argv[1]));
 
-		printf("SAFOR. Art removing mode. Overlaps/sustains are not touched.\n");
+		printf("SAFOR. Art removing mode. Overlaps and sustains are not removed.\n");
 	}
 	else
 	{
 		if (sustains_removal)
-			printf("SAFSOR. Note remapping enabled. Velocity is not preserved.\n");
+			printf("SAFSOR. Note remapping enabled. Audio may alter in unexpected ways.\n");
 		else
-			printf("SAFOR. Velocity Edition.\n");
+			printf("SAFOR. Classic Edition.\n");
 	}
 
 	std::cout << "\"Open file\" dialog should appear soon...\n";
