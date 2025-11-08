@@ -114,9 +114,15 @@ struct OverlapsRemover
 {
 	parameter_t rsb_byte;
 	std::uint16_t ppq_value;
-	track_n_t current_track;
+	track_n_t current_track_n;
 
-	std::multiset<NoteObject> note_set;
+	std::vector<NoteObject> dense_note_set;
+	std::vector<NoteObject> dense_current_track;
+	std::vector<NoteObject> buffered_notes_set;
+	std::vector<NoteObject> small_range_buffer;
+	std::vector<size_t> small_range_index_buffer;
+
+	//btree::multiset<NoteObject> note_set;
 	btree::multiset<track_n_t> tracks_set;
 	btree::map<track_n_t, btree::multiset<RawEvent>> mapped_notes_set;
 
@@ -127,7 +133,7 @@ struct OverlapsRemover
 	OverlapsRemover():
 		rsb_byte(0),
 		ppq_value(0),
-		current_track(0),
+		current_track_n(0),
 		file_input(nullptr)
 	{}
 
@@ -175,9 +181,9 @@ struct OverlapsRemover
 			for (int i = 0; i < 2; i++)
 				ppq_value = (ppq_value << 8) | (file_input->get());
 
-			note_set.clear();
+			dense_note_set.clear();
 			rsb_byte = 0;
-			current_track = 0;
+			current_track_n = 0;
 
 			if (dbg)
 				printf("Header\n");
@@ -220,7 +226,7 @@ struct OverlapsRemover
 	}
 
 	//for debug purposes
-	std::uint32_t get_total_poly() const
+	[[nodiscard]] std::uint32_t get_total_poly() const
 	{
 		std::uint32_t N = 0;
 		for (auto i = 0; i < 2048; i++)
@@ -229,8 +235,11 @@ struct OverlapsRemover
 		return N;
 	}
 
-	void smart_push(const NoteObject& event)
+	static void smart_push(std::vector<NoteObject>& target, const NoteObject& event)
 	{
+		const auto upper_bound_iter =
+			std::upper_bound(target.begin(), target.end(), event);
+
 		total_count++;
 		if(velocity_mode)
 		{
@@ -240,16 +249,19 @@ struct OverlapsRemover
 		else
 		{
 			pushed_count++;
-			auto e_pair = note_set.equal_range(event);
-			if (!note_set.empty() && e_pair.first != note_set.end())
+			const auto lower_bound_iter =
+				std::lower_bound(target.begin(), target.end(), event);
+
+			// auto e_pair = std::equal_range(target.begin(), target.end(), event);
+			if (!target.empty() && lower_bound_iter != target.end())
 			{
-				auto& current_p = e_pair.first;
-				const auto& rightmost = *(--e_pair.second);
-				while (current_p != note_set.end() && (!(*current_p < rightmost) && !(rightmost < *current_p)))
+				auto current_p = lower_bound_iter;
+				const auto& rightmost = *(upper_bound_iter - 1);
+				while (current_p != target.end() && (!(*current_p < rightmost) && !(rightmost < *current_p)))
 				{
 					if (priority_predicate(*current_p, event))
 					{
-						current_p = note_set.erase(current_p);
+						current_p = target.erase(current_p);
 						total_count--;
 					}
 					else
@@ -258,10 +270,10 @@ struct OverlapsRemover
 			}
 		}
 
-		note_set.insert(event);
+		target.insert(upper_bound_iter, event);
 	}
 
-	std::uint32_t read_vlv() const
+	[[nodiscard]] std::uint32_t read_vlv() const
 	{
 		if (file_input->eof() || file_input->bad())
 		{
@@ -334,7 +346,7 @@ struct OverlapsRemover
 
 			NoteObject note;
 			note.key = key;
-			note.track = (rsb_byte & 0x0F) | ((current_track) << 4);
+			note.track = (rsb_byte & 0x0F) | ((current_track_n) << 4);
 			if (poly[pos].empty())
 			{
 				// log something here?
@@ -348,7 +360,7 @@ struct OverlapsRemover
 			note.length = current_tick - note.tick;
 			note.velocity = note_on_data >> 56;
 
-			smart_push(note);
+			smart_push(dense_current_track, note);
 		}
 		else if (event_header >= 0x90 && event_header <= 0x9F)
 		{
@@ -369,7 +381,7 @@ struct OverlapsRemover
 			// otherwise this is a note off event
 			NoteObject note;
 			note.key = key;
-			note.track = (rsb_byte & 0x0F) | ((current_track) << 4);
+			note.track = (rsb_byte & 0x0F) | ((current_track_n) << 4);
 
 			if (poly[pos].empty())
 			{
@@ -384,7 +396,7 @@ struct OverlapsRemover
 			note.length = current_tick - note.tick;
 			note.velocity = note_on_data >> 56;
 
-			smart_push(note);
+			smart_push(dense_current_track, note);
 		}
 		else if ((event_header >= 0xA0 && event_header <= 0xBF) || (event_header >= 0xE0 && event_header <= 0xEF))
 		{
@@ -428,13 +440,13 @@ struct OverlapsRemover
 				}
 
 				// 0xFF key is "mapped" tempo event data
-				NoteObject Event;
-				Event.key = 0xFF;
-				Event.track = 0;
-				Event.tick = current_tick;
-				Event.length = tempo_data;
+				NoteObject event;
+				event.key = 0xFF;
+				event.track = 0;
+				event.tick = current_tick;
+				event.length = tempo_data;
 
-				smart_push(Event);
+				smart_push(dense_current_track, event);
 			}
 			else
 				for (int i = 0; i < meta_length; i++)
@@ -462,6 +474,81 @@ struct OverlapsRemover
 		return true;
 	}
 
+	void merge_current_track()
+	{
+		std::sort(dense_current_track.begin(), dense_current_track.end());
+
+		buffered_notes_set.clear();
+		buffered_notes_set.reserve((std::max)(dense_current_track.capacity(), dense_current_track.capacity()));
+
+		auto set_iter = dense_note_set.cbegin();
+		auto track_iter = dense_current_track.cbegin();
+
+		while (set_iter != dense_note_set.cend() && track_iter != dense_current_track.cend())
+		{
+			if (*set_iter < *track_iter)
+			{
+				buffered_notes_set.push_back(*set_iter);
+				++set_iter;
+				continue;
+			}
+
+			if (*track_iter < *set_iter)
+			{
+				buffered_notes_set.push_back(*track_iter);
+				++track_iter;
+				continue;
+			}
+
+			const auto track_range_begin = track_iter;
+			const auto set_range_begin = set_iter;
+
+			const auto set_range_end = std::upper_bound(set_range_begin, dense_note_set.cend(), *set_range_begin);
+			const auto track_range_end = std::upper_bound(track_range_begin, dense_current_track.cend(), *track_range_begin);
+
+			small_range_buffer.clear();
+			small_range_buffer.reserve((track_range_end - track_range_begin) + (set_range_begin - set_range_end));
+			small_range_buffer.insert(small_range_buffer.end(),set_range_begin, set_range_end);
+
+			for (auto iter = track_range_begin; iter != track_range_end; ++iter)
+			{
+				const auto& event = *iter;
+				auto current_p = small_range_buffer.begin();
+
+				small_range_index_buffer.clear();
+				while (current_p != small_range_buffer.end())
+				{
+					if (priority_predicate(*current_p, event))
+					{
+						small_range_index_buffer.push_back(current_p - small_range_buffer.begin());
+						//current_p = small_range_buffer.erase(current_p);
+						//total_count--;
+					}
+					else
+						++current_p;
+				}
+
+				for (auto reverse_index_iter = small_range_index_buffer.rbegin();
+					reverse_index_iter != small_range_index_buffer.rend();
+					++reverse_index_iter)
+				{
+					total_count--;
+					small_range_index_buffer.erase(small_range_index_buffer.begin() + *reverse_index_iter);
+				}
+
+				small_range_buffer.push_back(event);
+			}
+		}
+
+		buffered_notes_set.insert(buffered_notes_set.cend(), track_iter, dense_current_track.cend());
+		buffered_notes_set.insert(buffered_notes_set.cend(), set_iter, dense_note_set.cend());
+
+		dense_current_track.clear();
+		dense_note_set.clear();
+
+		buffered_notes_set.swap(dense_note_set);
+	}
+
 	void single_pass_filter()
 	{
 		constexpr local_uint_t log_trigger = 5000000;
@@ -470,34 +557,36 @@ struct OverlapsRemover
 		std::cout << "Single pass scan has started... it might take a while...\n";
 		local_uint_t _counter = 0;
 
-		auto iter = note_set.begin();
-		while (iter != note_set.end())
+		auto iter = dense_note_set.begin();
+		while (iter != dense_note_set.end())
 		{
-			RawEvent event;
-			auto& Note = *iter;
-			auto& track_ref = mapped_notes_set[Note.track];
+			auto& [tick, length, key, track, velocity] =
+				*iter;
+			auto& track_ref =
+				mapped_notes_set[track];
 
-			if (Note.key == 0xFF)
+			RawEvent event;
+			if (key == 0xFF)
 			{
-				event.tick = Note.tick;
+				event.tick = tick;
 				event.a = 0x03;
-				event.b = (Note.length & 0xFF0000) >> 16;
-				event.c = (Note.length & 0xFF00) >> 8;
-				event.d = (Note.length & 0xFF);
+				event.b = (length & 0xFF0000) >> 16;
+				event.c = (length & 0xFF00) >> 8;
+				event.d = (length & 0xFF);
 				track_ref.insert(event);
 			}
 			else
 			{
 				// Note ON event
-				event.tick = Note.tick;
+				event.tick = tick;
 				event.a = 0;
-				event.b = 0x90 | (Note.track & 0xF);
-				event.c = Note.key;
-				event.d = ((Note.velocity) ? Note.velocity : 1);
+				event.b = 0x90 | (track & 0xF);
+				event.c = key;
+				event.d = ((velocity) ? velocity : 1);
 				track_ref.insert(event);
 
 				// Note OFF event
-				event.tick += Note.length;
+				event.tick += length;
 				event.b ^= 0x10;
 				event.d = 0x40;
 				track_ref.insert(event);
@@ -510,9 +599,9 @@ struct OverlapsRemover
 					_counter = 0;
 				}
 			}
-			iter = note_set.erase(iter);
+			// iter = note_set.erase(iter);
 		}
-		note_set.clear();
+		dense_note_set.clear();
 
 		std::cout << "Single pass scan has finished... Note count: " << dump_counter + _counter << std::endl;
 	}
@@ -638,21 +727,23 @@ struct OverlapsRemover
 		std::vector<std::uint32_t> single_key_data;
 		std::vector<TrackSymbol> key_vector;
 
+		// FIXME - account for contiguity;
+
 		local_uint_t size;
 
-		if (note_set.empty())
+		if (dense_note_set.empty())
 			return;
 
 		for (int key = 0; key < 128; key++)
 		{
-			NoteObject ImNote;
-			ImNote.key = key;
-			ImNote.velocity = 1;
+			NoteObject note_object;
+			note_object.key = key;
+			note_object.velocity = 1;
 
-			auto iter = note_set.begin();
+			auto iter = dense_note_set.begin();
 			local_uint_t furthest_tick = 0;
 
-			while (iter != note_set.end())
+			while (iter != dense_note_set.end())
 			{
 				if (iter->key != key)
 				{
@@ -671,7 +762,7 @@ struct OverlapsRemover
 				insertable.velocity = iter->velocity;
 
 				key_vector.push_back(insertable);
-				iter = note_set.erase(iter);
+				iter = dense_note_set.erase(iter);
 			}
 
 			if (key_vector.empty())
@@ -717,13 +808,15 @@ struct OverlapsRemover
 				{
 					if ((single_key_data[index] >> (1 + 8)) != (single_key_data[index - 1] >> (1 + 8)) || (single_key_data[index] & 1))
 					{
-						ImNote.length = index - last_detected_edge;
-						ImNote.tick = last_detected_edge;
-						ImNote.track = (single_key_data[index - 1] >> (1 + 8));
-						ImNote.velocity = ((single_key_data[last_detected_edge] >> 1) & 0xFF);
+						note_object.length = index - last_detected_edge;
+						note_object.tick = last_detected_edge;
+						note_object.track = (single_key_data[index - 1] >> (1 + 8));
+						note_object.velocity = ((single_key_data[last_detected_edge] >> 1) & 0xFF);
 						last_detected_edge = index;
-						if (ImNote.track)
-							note_set.insert(ImNote);
+
+
+						if (note_object.track)
+							;//dense_note_set.insert(ImNote);
 
 						break;
 					}
@@ -739,25 +832,25 @@ struct OverlapsRemover
 	{
 		initialize(path);
 
-		printf("Notecount : Successfully pushed notes (Count) : Notes and tempo count without overlaps\n");
+		printf("Note count : Successfully pushed notes (Count) : Notes and tempo count without overlaps\n");
 
-		current_track = 2;
+		current_track_n = 2;
 		while (read_single_track())
 		{
-			current_track++;
+			current_track_n++;
 			std::cout << note_count << " : " << pushed_count << " : " << total_count << std::endl;
 		}
 		file_input->close();
 
 		if (dbg)
-			printf("Magic finished with set size %lld...\n", note_set.size());
+			printf("Magic finished with set size %lld...\n", dense_note_set.size());
 		if (dbg && sustains_removal)
 			printf("Note count might increase after remapping the MIDI\n");
 		if (sustains_removal)
 			notes_remapping();
 
-		auto iter = note_set.begin();
-		while (iter != note_set.end())
+		auto iter = dense_note_set.begin();
+		while (iter != dense_note_set.end())
 		{
 			if (tracks_set.find(iter->track) == tracks_set.end())
 				tracks_set.insert((iter->track));
