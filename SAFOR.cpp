@@ -220,7 +220,7 @@ struct OverlapsRemover
 	}
 
 	//for debug purposes
-	std::uint32_t get_total_poly() const
+	[[nodiscard]] std::uint32_t get_total_poly() const
 	{
 		std::uint32_t N = 0;
 		for (auto i = 0; i < 2048; i++)
@@ -261,7 +261,7 @@ struct OverlapsRemover
 		note_set.insert(event);
 	}
 
-	std::uint32_t read_vlv() const
+	[[nodiscard]] std::uint32_t read_vlv() const
 	{
 		if (file_input->eof() || file_input->bad())
 		{
@@ -428,13 +428,13 @@ struct OverlapsRemover
 				}
 
 				// 0xFF key is "mapped" tempo event data
-				NoteObject Event;
-				Event.key = 0xFF;
-				Event.track = 0;
-				Event.tick = current_tick;
-				Event.length = tempo_data;
+				NoteObject event;
+				event.key = 0xFF;
+				event.track = 0;
+				event.tick = current_tick;
+				event.length = tempo_data;
 
-				smart_push(Event);
+				smart_push(event);
 			}
 			else
 				for (int i = 0; i < meta_length; i++)
@@ -645,9 +645,9 @@ struct OverlapsRemover
 
 		for (int key = 0; key < 128; key++)
 		{
-			NoteObject ImNote;
-			ImNote.key = key;
-			ImNote.velocity = 1;
+			NoteObject note;
+			note.key = key;
+			note.velocity = 1;
 
 			auto iter = note_set.begin();
 			local_uint_t furthest_tick = 0;
@@ -717,13 +717,13 @@ struct OverlapsRemover
 				{
 					if ((single_key_data[index] >> (1 + 8)) != (single_key_data[index - 1] >> (1 + 8)) || (single_key_data[index] & 1))
 					{
-						ImNote.length = index - last_detected_edge;
-						ImNote.tick = last_detected_edge;
-						ImNote.track = (single_key_data[index - 1] >> (1 + 8));
-						ImNote.velocity = ((single_key_data[last_detected_edge] >> 1) & 0xFF);
+						note.length = index - last_detected_edge;
+						note.tick = last_detected_edge;
+						note.track = (single_key_data[index - 1] >> (1 + 8));
+						note.velocity = ((single_key_data[last_detected_edge] >> 1) & 0xFF);
 						last_detected_edge = index;
-						if (ImNote.track)
-							note_set.insert(ImNote);
+						if (note.track)
+							note_set.insert(note);
 
 						break;
 					}
@@ -739,7 +739,7 @@ struct OverlapsRemover
 	{
 		initialize(path);
 
-		printf("Notecount : Successfully pushed notes (Count) : Notes and tempo count without overlaps\n");
+		printf("Note count : Successfully pushed notes (Count) : Notes and tempo count without overlaps\n");
 
 		current_track = 2;
 		while (read_single_track())
