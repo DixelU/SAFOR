@@ -35,15 +35,16 @@ template<int N>
 consteval cchar_decay_string<N> to_cchar_t(const char (&value)[N])
 {
 	cchar_decay_string<N> result;
-	for (int i = 0; i < N; ++i)
-		result[i] = value[i];
+	for (size_t i = 0; i < N; ++i)
+		result[i] = static_cast<cchar_t>(value[i]);
 	return result;
 }
 
 consteval cchar_decay_string<1> to_cchar_t()
 {
 	cchar_decay_string<1> result;
-	result[0] = static_cast<cchar_t>(0);
+	result.operator[](0) = static_cast<cchar_t>(0);
+	// ^weird warning about ambiguous operator[] call here
 	return result;
 }
 
