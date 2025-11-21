@@ -1033,5 +1033,8 @@ int main(int argc, char** argv)
 
 #ifdef __WIN32__
 	return main__windows_runtime();
+#else
+	print_usage(argv[0]);
+	return 0;
 #endif
 }
