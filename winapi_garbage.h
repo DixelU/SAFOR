@@ -15,8 +15,8 @@
 namespace winapi_garbage
 {
 	inline HWND hList, hEdit;
-	inline int RemovalModeLine = -1;
-	inline int VelocityThreshold = -1;
+	inline int removal_mode_line = -1;
+	inline int velocity_threshold = -1;
 
 	inline LRESULT CALLBACK ModeSelectorMessageHandler(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	{
@@ -32,7 +32,7 @@ namespace winapi_garbage
 					auto selected = SendMessage(hList, LB_GETCURSEL, 0, 0);
 					if (selected >= 0)
 					{
-						RemovalModeLine = selected;
+						removal_mode_line = selected;
 						PostQuitMessage(0);
 						DestroyWindow(hWnd);
 					}
@@ -102,7 +102,7 @@ namespace winapi_garbage
 			DispatchMessage(&msg);
 		}
 	    
-		return RemovalModeLine;
+		return removal_mode_line;
 	}
 
 	inline LRESULT CALLBACK ThresholdMessageHandler(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -132,7 +132,7 @@ namespace winapi_garbage
 						{
 							if(int vol = std::stoi(retrieved); vol >= 0 && vol <= 127)
 							{
-								VelocityThreshold = vol;
+								velocity_threshold = vol;
 								PostQuitMessage(0);
 								DestroyWindow(hWnd);
 							}
@@ -194,7 +194,7 @@ namespace winapi_garbage
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
 		}
-		return VelocityThreshold;
+		return velocity_threshold;
 	}
 }
 

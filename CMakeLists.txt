@@ -3,7 +3,7 @@
 cmake_minimum_required(VERSION 3.28)
 project(SAFOR)
 
-set(CMAKE_CXX_STANDARD 20 CACHE STRING "C++ standard to be used")
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++ -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive")
 # set(CMAKE_CXX_FLAGS "-Wall -Wextra")
 set(CMAKE_CXX_FLAGS_RELEASE " -Ofast -msse3 -funroll-all-loops -fomit-frame-pointer -floop-parallelize-all")
@@ -30,4 +30,5 @@ target_link_libraries(
 	comctl32.a
 	mincore.a
 	urlmon.a
+	stdc++exp.a
 )
