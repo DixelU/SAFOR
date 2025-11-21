@@ -892,15 +892,15 @@ constexpr int INCORRECT_CLI_OPTS = -1;
 void print_usage(const char* program_name)
 {
 	std::cout
-		<< "Usage: " << program_name << " [OPTIONS] target_file\n\n"
+		<< "Usage: " << program_name << " [OPTIONS] target.midi\n\n"
 		<< "Options:\n"
-		<< "  -o, --output         Enable output (Default behavior)\n"
-		<< "  -s, --secondary      Secondary mode (Implies -o)\n"
-		<< "  -v, --value <num>    Set value (Excludes -o and -s)\n"
-		<< "  -q, --quiet          Quiet mode\n"
-		<< "  -Q, --very-quiet     Very quiet mode (Implies -q)\n"
-		<< "  -r, --redirect <path> Optional redirect path\n"
-		<< "  -h, --help           Show this help message\n";
+		<< "  -o, --overlaps         Overlaps removal (Default behavior)\n"
+		<< "  -s, --sustains         Remove sustains (Implies -o)\n"
+		<< "  -v, --velocity <num>   Velocity threshold (Excludes -o and -s)\n"
+		<< "  -q, --quiet            Quiet mode\n"
+		<< "  -Q, --quitest          Very quiet mode (Implies -q)\n"
+		<< "  -r, --redirect         <path> Optional save path\n"
+		<< "  -h, --help             Show this help message\n";
 }
 
 int main__cli_runtime(int argc, char** &argv)
@@ -923,7 +923,8 @@ int main__cli_runtime(int argc, char** &argv)
 		{"quitest",	no_argument,		nullptr, 'Q'},
 		{"redirect",	required_argument,	nullptr, 'r'},
 		{"help",	no_argument,		nullptr, 'h'},
-		{nullptr,	0,			nullptr, '\0'} // Sentinel to mark end of array
+		{nullptr,	0,			nullptr, '\0'}
+		// ^Sentinel to mark end of array
 	};
 
 	int opt;
