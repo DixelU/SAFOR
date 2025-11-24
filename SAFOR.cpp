@@ -187,7 +187,7 @@ struct OverlapsRemover
 			file_input->close();
 
 			if (!quietest_mode)
-				std::print("Input file doesn't begin with MThd");
+				std::print("Input file doesn't begin with MThd\n");
 		}
 	}
 
