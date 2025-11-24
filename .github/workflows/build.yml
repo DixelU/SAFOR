@@ -20,7 +20,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Build 64 bit executable
-        run: g++ SAFOR.cpp -o SAFOR64 -msse2 -Ofast -std=c++23 -I"." -static -lstdc++exp -s
+        run: g++-14 SAFOR.cpp -o SAFOR64 -msse2 -Ofast -std=c++23 -I"." -static -lstdc++exp -s
       - uses: actions/upload-artifact@v4
         name: Artifact Upload
         with:
