@@ -16,21 +16,7 @@ if (WIN32)
 	 target_link_libraries(
 		 SAFOR
 		 PRIVATE
-		 comdlg32.a
-		 ws2_32.a
-		 winmm.a
-		 gdi32.a
-		 dwmapi.a
-		 ole32.a
-		 opengl32.a
-		 glu32.a
-		 oleaut32.a
-		 oleaut32.a
-		 uuid.a
-		 uxtheme.a
 		 comctl32.a
-		 mincore.a
-		 urlmon.a
 		 stdc++exp.a
 	 )
 
