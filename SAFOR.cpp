@@ -124,7 +124,7 @@ struct OverlapsRemover
 	btree::map<track_n_t, btree::multiset<RawEvent>> mapped_notes_set;
 
 	// the first 128 is the first channel, next 128 are the second... etc.
-	std::array<std::deque<local_uint_t>, 2048> poly;
+	std::array<std::vector<local_uint_t>, 2048> poly;
 	bbb_ffr* file_input;
 
 	OverlapsRemover():
@@ -156,7 +156,10 @@ struct OverlapsRemover
 	void clear_polyphony()
 	{
 		for (auto& polyphony_stack: poly)
+		{
 			polyphony_stack.clear();
+			polyphony_stack.reserve(1024);
+		}
 	}
 
 	void initialize(const std_unicode_string& link)
@@ -613,7 +616,7 @@ struct OverlapsRemover
 			auto iter = note_maps_iter->second.begin();
 			while (iter != note_maps_iter->second.end())
 			{
-				auto event = *iter;
+				const auto& event = *iter;
 				const std::uint32_t tTick = event.tick - previous_tick;
 
 				/*auto length = */push_vlv(tTick, track_data);
@@ -798,8 +801,8 @@ struct OverlapsRemover
 		auto iter = note_set.begin();
 		while (iter != note_set.end())
 		{
-			if (tracks_set.find(iter->track) == tracks_set.end())
-				tracks_set.insert((iter->track));
+			tracks_set.insert(iter->track);
+
 			++iter;
 		}
 
@@ -887,7 +890,6 @@ int main__windows_runtime()
 
 constexpr int GRACEFUL_DENY = 255;
 constexpr int INCORRECT_CLI_OPTS = -1;
-
 
 void print_usage(const char* program_name)
 {
