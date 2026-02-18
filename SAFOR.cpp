@@ -664,112 +664,146 @@ struct OverlapsRemover
 		fout.flush();
 	}
 
-	void notes_remapping() // sustain removal
+	void notes_remapping() // sustain removal - sparse version
 	{
-		std::vector<std::uint32_t> single_key_data;
-		std::vector<TrackSymbol> key_vector;
-
-		local_uint_t size;
-
 		if (note_set.empty())
 			return;
 
-		for (int key = 0; key < 128; key++)
+		// Group notes by key in a single pass - O(n) instead of O(128*n)
+		std::array<std::vector<TrackSymbol>, 128> notes_by_key;
+
+		auto iter = note_set.begin();
+		while (iter != note_set.end())
 		{
-			NoteObject note;
-			note.key = key;
-			note.velocity = 1;
-
-			auto iter = note_set.begin();
-			local_uint_t furthest_tick = 0;
-
-			while (iter != note_set.end())
+			if (iter->key >= 128)
 			{
-				if (iter->key != key)
-				{
-					++iter;
-					continue;
-				}
-
-				const auto note_ending = iter->tick + iter->length;
-				if(furthest_tick < note_ending)
-					furthest_tick = note_ending;
-
-				TrackSymbol insertable;
-				insertable.tick = iter->tick;
-				insertable.track = iter->track;
-				insertable.length = iter->length;
-				insertable.velocity = iter->velocity;
-
-				key_vector.push_back(insertable);
-				iter = note_set.erase(iter);
+				// Keep tempo events (key == 0xFF) and other special events
+				++iter;
+				continue;
 			}
 
+			const auto key = iter->key;
+
+			TrackSymbol insertable;
+			insertable.tick = iter->tick;
+			insertable.track = iter->track;
+			insertable.length = iter->length;
+			insertable.velocity = iter->velocity;
+
+			notes_by_key[key].push_back(insertable);
+			iter = note_set.erase(iter);
+		}
+
+		if (!quiet_mode)
+			std::print("Single-pass grouping complete\n");
+
+		// Event structure for sparse processing
+		struct SparseEvent
+		{
+			local_uint_t tick;
+			std::uint32_t order;    // preserves original processing order for same-tick events
+			bool is_start;          // true = note-on, false = note-off
+			std::uint32_t track;
+			std::uint8_t velocity;
+			local_uint_t start_tick; // original note's start tick (for active set key)
+		};
+
+		std::vector<SparseEvent> events;
+
+		for (int key = 0; key < 128; key++)
+		{
+			auto& key_vector = notes_by_key[key];
 			if (key_vector.empty())
 				continue;
 
 			if (!quiet_mode)
+				std::print("Processing key {} with {} notes (sparse)\n", key, key_vector.size());
+
+			// Build events from notes
+			events.clear();
+			events.reserve(key_vector.size() * 2);
+
+			std::uint32_t order = 0;
+			for (const auto& n : key_vector)
 			{
-				std::print("Set traversal ended with {} keys\n", key_vector.size());
-				std::print("Expected extra memory consumption: {} bytes\n", furthest_tick);
+				events.push_back({n.tick, order, true, n.track, n.velocity, n.tick});
+				events.push_back({n.tick + n.length, order, false, n.track, 0, n.tick});
+				++order;
 			}
-
-			furthest_tick++; // important for note-off event detection.
-
-			if (furthest_tick >= single_key_data.size())
-			{
-				single_key_data.resize(furthest_tick, 0);
-				if (!quiet_mode)
-					std::print("Key map expansion {}\n", single_key_data.size());
-			}
-
-			for (auto & track_symbol : key_vector)
-			{
-				size = track_symbol.tick + track_symbol.length;
-				auto& current_tick_data = single_key_data[track_symbol.tick];
-
-				const auto velocity = (std::max)(
-					static_cast<unsigned char>((current_tick_data >> 1) & 0xFF),
-					track_symbol.velocity);
-				current_tick_data = (track_symbol.track << (1 + 8)) | (velocity << 1) | 1;
-
-				for (local_uint_t tick = track_symbol.tick + 1; tick < size; ++tick)
-					single_key_data[tick] = ((track_symbol.track << (1 + 8)) /*| (velocity << 1)*/);
-			}
-
-			if (!quiet_mode)
-				std::print("Key map traversal ended\n");
 
 			key_vector.clear();
+			key_vector.shrink_to_fit();
 
-			local_uint_t index = 0;
-			local_uint_t last_detected_edge = 0;
-			size = single_key_data.size();
-
-			// todo: sparse remap for 32k ppq, high bpm midis (foreshadowing)
-			while (index < size)
+			// Sort: by tick, then ends before starts, then by original order
+			std::sort(events.begin(), events.end(), [](const SparseEvent& a, const SparseEvent& b)
 			{
-				//LastEdge = T;
-				for (++index; index < size; ++index)
-				{
-					if ((single_key_data[index] >> (1 + 8)) != (single_key_data[index - 1] >> (1 + 8)) || (single_key_data[index] & 1))
-					{
-						note.length = index - last_detected_edge;
-						note.tick = last_detected_edge;
-						note.track = (single_key_data[index - 1] >> (1 + 8));
-						note.velocity = ((single_key_data[last_detected_edge] >> 1) & 0xFF);
-						last_detected_edge = index;
-						if (note.track)
-							note_set.insert(note);
+				if (a.tick != b.tick) return a.tick < b.tick;
+				if (a.is_start != b.is_start) return !a.is_start; // ends before starts
+				return a.order < b.order;
+			});
 
-						break;
+			// Active notes: map from start_tick -> (track, velocity)
+			// Using start_tick as key allows O(log n) lookup of "latest started" via rbegin()
+			btree::map<local_uint_t, std::pair<std::uint32_t, std::uint8_t>> active;
+
+			// Current segment tracking
+			local_uint_t segment_start = 0;
+			std::uint32_t segment_track = 0;
+			std::uint8_t segment_velocity = 0;
+
+			// Key insight: the ownership is taken by the track/channel pair,
+			// since each tick can only be owned by a singular track/channel.
+			auto get_owner = [&]() -> std::pair<std::uint32_t, std::uint8_t>
+			{
+				if (active.empty()) return {0, 0};
+				auto it = active.rbegin(); // highest start_tick = most recent note
+				return it->second;
+			};
+
+			for (const auto& e : events)
+			{
+				if (e.is_start)
+				{
+					// Add to active set; if same start_tick exists, update track and max velocity
+					auto& entry = active[e.start_tick];
+					entry.second = (std::max)(entry.second, e.velocity);
+					entry.first = e.track; // last-write-wins for track at same tick
+				}
+				else
+				{
+					// Remove from active set
+					active.erase(e.start_tick);
+				}
+
+				auto [new_track, new_vel] = get_owner();
+
+				// Check if we need to emit a segment (owner changed or new note-on at current owner)
+				bool owner_changed = (new_track != segment_track);
+				bool new_note_on = e.is_start && (new_track == e.track) && (e.tick > segment_start);
+
+				if (owner_changed || new_note_on)
+				{
+					// Emit previous segment if valid
+					if (segment_track != 0 && e.tick > segment_start)
+					{
+						NoteObject note;
+						note.key = key;
+						note.tick = segment_start;
+						note.length = e.tick - segment_start;
+						note.track = segment_track;
+						note.velocity = segment_velocity;
+						note_set.insert(note);
 					}
+
+					segment_start = e.tick;
+					segment_track = new_track;
+					// Velocity only set on note-on; segments starting from note-off get 0
+					segment_velocity = (e.is_start && new_track == e.track) ? new_vel : 0;
 				}
 			}
-			single_key_data.clear();
 
 			if (!quiet_mode)
-				std::print("Key {} processed in sustains removing algorithm\n", key);
+				std::print("Key {} processed in sustains removing algorithm (sparse)\n", key);
 		}
 	}
 
