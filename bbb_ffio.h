@@ -80,7 +80,7 @@ inline std::pair<__inner_stream_type*, FILE*> open_wide_stream(
 	std_unicode_string file, const cchar_t* parameter)
 {
 	FILE* c_file = nullptr;
-	auto cur_errno = fopen_wrap(c_file, file.c_str(), parameter);
+	/*auto cur_errno = */fopen_wrap(c_file, file.c_str(), parameter);
 
 	auto buffer = new __gnu_cxx::stdio_filebuf<char>(c_file, stream_io_type, 100000);
 

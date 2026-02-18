@@ -9,7 +9,7 @@ add_executable(SAFOR SAFOR.cpp)
 
 if (WIN32)
 	 set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++ -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive")
-	 set(CMAKE_CXX_FLAGS_RELEASE " -Ofast -msse3 -funroll-all-loops -fomit-frame-pointer -floop-parallelize-all")
+	 set(CMAKE_CXX_FLAGS " -Ofast -msse3 -funroll-all-loops -fomit-frame-pointer -floop-parallelize-all -Wall -Wextra")
 
 	 target_include_directories(SAFOR PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -22,7 +22,7 @@ if (WIN32)
 
 else ()
 	 set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++")
-	 set(CMAKE_CXX_FLAGS_RELEASE " -Ofast -funroll-all-loops -fomit-frame-pointer -floop-parallelize-all")
+	 set(CMAKE_CXX_FLAGS " -Ofast -funroll-all-loops -fomit-frame-pointer -floop-parallelize-all")
 
 	 target_include_directories(SAFOR PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 

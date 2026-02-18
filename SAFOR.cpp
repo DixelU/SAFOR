@@ -19,9 +19,13 @@
 
 #include "bbb_ffio.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-copy"
+#pragma GCC diagnostic ignored "-Warray-bounds"
 #include "btree/btree.h"
 #include "btree/set.h"
 #include "btree/map.h"
+#pragma GCC diagnostic pop
 
 using local_uint_t = std::uint64_t;
 using smallest_tick_t = local_uint_t;			//Least top edge // Tick / len...
@@ -992,8 +996,6 @@ int main__cli_runtime(int argc, char** &argv)
 			try
 			{
 				min_velocity = std::stoi(optarg);
-				if (min_velocity < 0 || min_velocity > 255)
-					throw std::invalid_argument("Velocity value must be between 0 and 255");
 			}
 			catch (...)
 			{
