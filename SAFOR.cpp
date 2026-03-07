@@ -825,6 +825,7 @@ struct OverlapsRemover
 			if (!quiet_mode)
 				std::print("{:20} : {:20} : {:20}\n", note_count, pushed_count, total_count);
 		}
+
 		file_input->close();
 
 		if (dbg && !quietest_mode)
@@ -857,6 +858,8 @@ struct OverlapsRemover
 #ifdef __WIN32__
 std_unicode_string open_file_dialog(const cchar_t* title)
 {
+	auto mask = to_cchar_t("MIDI Files(*.mid)\0*.mid\0");
+
 	OPENFILENAMEW ofn;
 	cchar_t filepath_buffer[1000];
 	ZeroMemory(&ofn, sizeof(ofn));
@@ -866,7 +869,7 @@ std_unicode_string open_file_dialog(const cchar_t* title)
 	ofn.lpstrFile = filepath_buffer;
 	ofn.lpstrFile[0] = '\0';
 	ofn.nMaxFile = sizeof(filepath_buffer);
-	ofn.lpstrFilter = to_cchar_t("MIDI Files(*.mid)\0*.mid\0");
+	ofn.lpstrFilter = mask;
 	ofn.nFilterIndex = 1;
 	ofn.lpstrFileTitle = nullptr;
 	ofn.lpstrTitle = title;

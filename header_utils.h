@@ -35,8 +35,15 @@ template<int N>
 consteval cchar_decay_string<N> to_cchar_t(const char (&value)[N])
 {
 	cchar_decay_string<N> result;
+
 	for (size_t i = 0; i < N; ++i)
+	{
+		if (i == N - 1 && value[i] == '\0')
+			continue;
+
 		result[i] = static_cast<cchar_t>(value[i]);
+	}
+
 	return result;
 }
 
