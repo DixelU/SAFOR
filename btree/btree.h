@@ -901,7 +901,7 @@ private:
 		// allocator_type& alloc = allocator();
 		// allocator_traits::destroy(alloc, v);
 
-		assert(memcpy(v, zero_value, sizeof(value_type)));
+		assert(memcpy(static_cast<void*>(v), zero_value, sizeof(value_type)));
 	}
 
 	void destroy_value(int i) {
