@@ -28,7 +28,7 @@ struct cchar_decay_string : public std::array<cchar_t, N>
 	using base_type = std::array<cchar_t, N>;
 	
 	operator const cchar_t*() const { return base_type::data(); }
-	operator std_unicode_string() const { return std_unicode_string(base_type::data(), base_type::size()); }
+	operator std_unicode_string() const { return std_unicode_string(base_type::data(), base_type::size() - 1); }
 };
 
 template<int N>

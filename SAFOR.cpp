@@ -863,12 +863,12 @@ std_unicode_string open_file_dialog(const cchar_t* title)
 	OPENFILENAMEW ofn;
 	cchar_t filepath_buffer[1000];
 	ZeroMemory(&ofn, sizeof(ofn));
-	ZeroMemory(filepath_buffer, 1000);
+	ZeroMemory(filepath_buffer, sizeof(filepath_buffer));
 	ofn.lStructSize = sizeof(ofn);
 	ofn.hwndOwner = nullptr;
 	ofn.lpstrFile = filepath_buffer;
 	ofn.lpstrFile[0] = '\0';
-	ofn.nMaxFile = sizeof(filepath_buffer);
+	ofn.nMaxFile = sizeof(filepath_buffer) / sizeof(cchar_t);
 	ofn.lpstrFilter = mask;
 	ofn.nFilterIndex = 1;
 	ofn.lpstrFileTitle = nullptr;
