@@ -124,7 +124,6 @@ struct OverlapsRemover
 	track_n_t current_track;
 
 	btree::multiset<NoteObject> note_set;
-	btree::multiset<track_n_t> tracks_set;
 	btree::map<track_n_t, btree::multiset<RawEvent>> mapped_notes_set;
 
 	// the first 128 is the first channel, next 128 are the second... etc.
@@ -562,6 +561,11 @@ struct OverlapsRemover
 			std::print("Starting enhanced output algorithm\n");
 
 		single_pass_filter();
+
+		size_t tracks_count = mapped_notes_set.size();
+		if (!quietest_mode)
+			std::print("Tracks used: {}\n", mapped_notes_set.size());
+
 		std::vector<std::uint8_t> track_data;
 
 		if (save_path_override.empty())
@@ -592,12 +596,10 @@ struct OverlapsRemover
 		fout.put(6);
 		fout.put(0);
 		fout.put(1);
-		fout.put(static_cast<char>((tracks_set.size() >> 8)));
-		fout.put(static_cast<char>((tracks_set.size() & 0xFF)));
+		fout.put(static_cast<char>((tracks_count >> 8)));
+		fout.put(static_cast<char>((tracks_count & 0xFF)));
 		fout.put(static_cast<char>(ppq_value >> 8));
 		fout.put(static_cast<char>(ppq_value & 0xFF));
-
-		tracks_set.clear();
 
 		auto note_maps_iter = mapped_notes_set.begin();
 		while (note_maps_iter != mapped_notes_set.end())
@@ -837,19 +839,8 @@ struct OverlapsRemover
 		if (sustains_removal)
 			notes_remapping();
 
-		auto iter = note_set.begin();
-		while (iter != note_set.end())
-		{
-			tracks_set.insert(iter->track);
-
-			++iter;
-		}
-
 		if (dbg && !quiet_mode)
 			std::print("Ready for output...\n");
-
-		if (!quietest_mode)
-			std::print("Tracks used: {}\n", tracks_set.size());
 
 		write_midi(path, save_path_override);
 	}
