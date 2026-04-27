@@ -216,6 +216,9 @@ struct OverlapsRemover
 
 	void smart_push(const NoteObject& event)
 	{
+		if (sustains_removal && event.key < 0xFF && event.length == 0)
+			return;
+
 		total_count++;
 		if(velocity_mode)
 		{
@@ -715,14 +718,14 @@ struct OverlapsRemover
 			}
 
 			key_vector.clear();
-			key_vector.shrink_to_fit();
+			// key_vector.shrink_to_fit();
 
-			// Sort: by tick, then ends before starts, then by original order
 			std::ranges::sort(events, [](const SparseEvent& a, const SparseEvent& b)
 			{
 				if (a.tick != b.tick) return a.tick < b.tick;
-				if (a.is_start != b.is_start) return !a.is_start; // ends before starts
-				return a.order < b.order;
+				if (a.order != b.order) return a.order < b.order;
+				if (a.is_start != b.is_start) return a.is_start; // start before end for same note
+				return false;
 			});
 
 			// Match the original dense implementation: later notes in the per-key stream
@@ -744,7 +747,7 @@ struct OverlapsRemover
 			auto get_owner = [&]() -> OwnerState
 			{
 				if (active.empty())
-					return {0, 0, 0};
+					return {0, 0, 1};
 
 				const auto it = active.rbegin();
 				return {it->first, it->second.first, it->second.second};
@@ -762,12 +765,13 @@ struct OverlapsRemover
 				{
 					const auto& e = events[event_index];
 
-					max_vel = (std::max)(max_vel, e.velocity);
 					if (e.is_start)
 					{
 						active[e.order] = {e.track, e.velocity};
 						started_owner_order = e.order;
 						has_started_owner = true;
+
+						max_vel = max_vel < e.velocity ? e.velocity : max_vel;
 					}
 					else
 						active.erase(e.order);
