@@ -746,7 +746,7 @@ struct OverlapsRemover
 				if (active.empty())
 					return {0, 0, 0};
 
-				auto it = active.rbegin();
+				const auto it = active.rbegin();
 				return {it->first, it->second.first, it->second.second};
 			};
 
@@ -756,10 +756,13 @@ struct OverlapsRemover
 				const auto tick = events[event_index].tick;
 				std::uint32_t started_owner_order = 0;
 				bool has_started_owner = false;
+				uint8_t max_vel = 0;
 
 				while (event_index < events.size() && events[event_index].tick == tick)
 				{
 					const auto& e = events[event_index];
+
+					max_vel = (std::max)(max_vel, e.velocity);
 					if (e.is_start)
 					{
 						active[e.order] = {e.track, e.velocity};
@@ -767,16 +770,13 @@ struct OverlapsRemover
 						has_started_owner = true;
 					}
 					else
-					{
 						active.erase(e.order);
-					}
 
 					++event_index;
 				}
 
 				const auto owner = get_owner();
 				const auto new_track = owner.track;
-				const auto new_vel = owner.velocity;
 
 				// Keep the same edge detection as the dense timeline painter:
 				// split when the visible track changes or when the now-visible owner starts here.
@@ -802,8 +802,9 @@ struct OverlapsRemover
 
 					segment_start = tick;
 					segment_track = new_track;
+
 					// Revived notes inherit no note-on edge at this tick, matching the dense mapper.
-					segment_velocity = new_note_on ? new_vel : 0;
+					segment_velocity = new_note_on ? max_vel : 1;
 				}
 			}
 
