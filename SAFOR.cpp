@@ -5,7 +5,6 @@
 #include <fstream>
 #include <iterator>
 #include <array>
-#include <set>
 #include <thread>
 #include <print>
 
@@ -126,7 +125,7 @@ struct OverlapsRemover
 	btree::multiset<NoteObject> note_set;
 	btree::map<track_n_t, btree::multiset<RawEvent>> mapped_notes_set;
 
-	// the first 128 is the first channel, next 128 are the second... etc.
+	// the first 128 is the first channel, next 128 are the second...
 	std::array<std::vector<local_uint_t>, 2048> poly;
 	bbb_ffr* file_input;
 
@@ -136,18 +135,6 @@ struct OverlapsRemover
 		current_track(0),
 		file_input(nullptr)
 	{}
-
-	static void ostream_write(
-		std::vector<std::uint8_t>& vec,
-		const std::vector<std::uint8_t>::iterator& beg,
-		const std::vector<std::uint8_t>::iterator& end,
-		std::ostream& out)
-	{
-		const auto offset = beg - vec.begin();
-		out.write(
-			reinterpret_cast<char*>(vec.data()) + offset,
-			end - beg);
-	}
 
 	static void ostream_write(
 		std::vector<std::uint8_t>& vec,
@@ -225,16 +212,6 @@ struct OverlapsRemover
 		}
 
 		return false;
-	}
-
-	//for debug purposes
-	[[nodiscard]] std::uint32_t get_total_poly() const
-	{
-		std::uint32_t N = 0;
-		for (auto i = 0; i < 2048; i++)
-			N += poly[i].size();
-
-		return N;
 	}
 
 	void smart_push(const NoteObject& event)
@@ -711,7 +688,7 @@ struct OverlapsRemover
 			bool is_start;          // true = note-on, false = note-off
 			std::uint32_t track;
 			std::uint8_t velocity;
-			local_uint_t start_tick; // original note's start tick (for active set key)
+			local_uint_t start_tick; // original note's start tick
 		};
 
 		std::vector<SparseEvent> events;
@@ -741,70 +718,92 @@ struct OverlapsRemover
 			key_vector.shrink_to_fit();
 
 			// Sort: by tick, then ends before starts, then by original order
-			std::sort(events.begin(), events.end(), [](const SparseEvent& a, const SparseEvent& b)
+			std::ranges::sort(events, [](const SparseEvent& a, const SparseEvent& b)
 			{
 				if (a.tick != b.tick) return a.tick < b.tick;
 				if (a.is_start != b.is_start) return !a.is_start; // ends before starts
 				return a.order < b.order;
 			});
 
-			// Active notes: map from start_tick -> (track, velocity)
-			// Using start_tick as key allows O(log n) lookup of "latest started" via rbegin()
-			btree::map<local_uint_t, std::pair<std::uint32_t, std::uint8_t>> active;
+			// Match the original dense implementation: later notes in the per-key stream
+			// overwrite earlier ones for every covered tick.
+			btree::map<std::uint32_t, std::pair<std::uint32_t, std::uint8_t>> active;
 
 			// Current segment tracking
 			local_uint_t segment_start = 0;
 			std::uint32_t segment_track = 0;
 			std::uint8_t segment_velocity = 0;
 
-			// Key insight: the ownership is taken by the track/channel pair,
-			// since each tick can only be owned by a singular track/channel.
-			auto get_owner = [&]() -> std::pair<std::uint32_t, std::uint8_t>
+			struct OwnerState
 			{
-				if (active.empty()) return {0, 0};
-				auto it = active.rbegin(); // highest start_tick = most recent note
-				return it->second;
+				std::uint32_t order;
+				std::uint32_t track;
+				std::uint8_t velocity;
 			};
 
-			for (const auto& e : events)
+			auto get_owner = [&]() -> OwnerState
 			{
-				if (e.is_start)
+				if (active.empty())
+					return {0, 0, 0};
+
+				auto it = active.rbegin();
+				return {it->first, it->second.first, it->second.second};
+			};
+
+			std::size_t event_index = 0;
+			while (event_index < events.size())
+			{
+				const auto tick = events[event_index].tick;
+				std::uint32_t started_owner_order = 0;
+				bool has_started_owner = false;
+
+				while (event_index < events.size() && events[event_index].tick == tick)
 				{
-					// Add to active set; if same start_tick exists, update track and max velocity
-					auto& entry = active[e.start_tick];
-					entry.second = (std::max)(entry.second, e.velocity);
-					entry.first = e.track; // last-write-wins for track at same tick
-				}
-				else
-				{
-					// Remove from active set
-					active.erase(e.start_tick);
+					const auto& e = events[event_index];
+					if (e.is_start)
+					{
+						active[e.order] = {e.track, e.velocity};
+						started_owner_order = e.order;
+						has_started_owner = true;
+					}
+					else
+					{
+						active.erase(e.order);
+					}
+
+					++event_index;
 				}
 
-				auto [new_track, new_vel] = get_owner();
+				const auto owner = get_owner();
+				const auto new_track = owner.track;
+				const auto new_vel = owner.velocity;
 
-				// Check if we need to emit a segment (owner changed or new note-on at current owner)
+				// Keep the same edge detection as the dense timeline painter:
+				// split when the visible track changes or when the now-visible owner starts here.
 				bool owner_changed = (new_track != segment_track);
-				bool new_note_on = e.is_start && (new_track == e.track) && (e.tick > segment_start);
+				bool new_note_on =
+					has_started_owner &&
+					owner.order == started_owner_order &&
+					(tick > segment_start);
 
 				if (owner_changed || new_note_on)
 				{
 					// Emit previous segment if valid
-					if (segment_track != 0 && e.tick > segment_start)
+					if (segment_track != 0 && tick > segment_start)
 					{
 						NoteObject note;
 						note.key = key;
 						note.tick = segment_start;
-						note.length = e.tick - segment_start;
+						note.length = tick - segment_start;
 						note.track = segment_track;
 						note.velocity = segment_velocity;
 						note_set.insert(note);
 					}
 
-					segment_start = e.tick;
+					segment_start = tick;
 					segment_track = new_track;
-					// Velocity only set on note-on; segments starting from note-off get 0
-					segment_velocity = (e.is_start && new_track == e.track) ? new_vel : 0;
+					// Revived notes inherit no note-on edge at this tick, matching the dense mapper.
+					segment_velocity = new_note_on ? new_vel : 0;
 				}
 			}
 
@@ -964,7 +963,7 @@ int main__cli_runtime(int argc, char** &argv)
 	int opt;
 	int option_index = 0;
 
-	auto argv_string_to_unicode_string = [](char* str) -> std_unicode_string
+	auto argv_string_to_unicode_string = [](const char* str) -> std_unicode_string
 	{
 		std_unicode_string string;
 		while (*str != '\0')
@@ -974,7 +973,7 @@ int main__cli_runtime(int argc, char** &argv)
 
 	// 2. Parsing Loop
 	// The string "osv:qQr:h" defines short options.
-	// A colon (:) after a character means it requires an argument.
+	// A colon ( : ) after a character means it requires an argument.
 	while ((opt = getopt_long(argc, argv, "osv:qQr:h", long_options, &option_index)) != -1)
 	{
 		switch (opt) {

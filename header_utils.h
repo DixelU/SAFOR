@@ -38,8 +38,11 @@ consteval cchar_decay_string<N> to_cchar_t(const char (&value)[N])
 
 	for (size_t i = 0; i < N; ++i)
 	{
-		if (i == N - 1 && value[i] == '\0')
+		if (i == N - 1)
+		{
+			result[i] = '\0';
 			continue;
+		}
 
 		result[i] = static_cast<cchar_t>(value[i]);
 	}
