@@ -7,6 +7,10 @@
 #include <array>
 #include <thread>
 #include <print>
+#include <algorithm>
+#include <memory>
+#include <limits>
+#include <bit>
 
 #include <getopt.h>
 
@@ -54,30 +58,11 @@ struct NoteObject
 {
 	smallest_tick_t tick;
 	std::uint32_t length;
-	parameter_t key;
 	track_n_t track;
+	parameter_t key;
 	mutable std::uint8_t velocity;
 };
-
-struct RawEvent
-{
-	smallest_tick_t tick;
-	std::uint8_t a, b, c, d;
-};
-
-struct TrackSymbol
-{
-	smallest_tick_t tick;
-	std::uint32_t length;
-	std::uint32_t track;
-	parameter_t velocity;
-};
 #pragma pack(pop)
-
-bool operator<(const RawEvent& a, const RawEvent& b)
-{
-	return a.tick < b.tick;
-}
 
 bool operator<(const NoteObject& a, const NoteObject& b)
 {
@@ -88,11 +73,6 @@ bool operator<(const NoteObject& a, const NoteObject& b)
 		return a.key < b.key;
 
 	return false;
-}
-
-bool operator<(const TrackSymbol& a, const TrackSymbol& b)
-{
-	return a.tick < b.tick;
 }
 
 bool priority_predicate(const NoteObject& O, const NoteObject& N)
@@ -116,14 +96,148 @@ bool priority_predicate(const NoteObject& O, const NoteObject& N)
 	return true;
 }
 
+// Notes packed as tick deltas and varints (~7 bytes per note), written once and then read once.
+// Blocks are freed as soon as they are read, so moving notes from one stream
+// into another never needs memory for both copies at the same time.
+class note_stream
+{
+	struct block
+	{
+		std::unique_ptr<std::uint8_t[]> data;
+		std::uint32_t capacity;
+		std::uint32_t used;
+	};
+
+	static constexpr std::size_t min_block_size = 256;
+	static constexpr std::size_t max_block_size = 64 * 1024;
+	// tick delta + key + velocity + length + track
+	static constexpr std::size_t max_record_size = 10 + 1 + 1 + 5 + 5;
+
+	std::vector<block> blocks;
+	std::size_t read_block = 0;
+	std::size_t read_pos = 0;
+	smallest_tick_t push_tick = 0;
+	smallest_tick_t pop_tick = 0;
+	std::size_t notes_left = 0;
+	std::size_t bytes_left = 0;
+	std::size_t bytes_pushed = 0;
+
+	static void put_varint(std::uint8_t*& ptr, std::uint64_t value)
+	{
+		while (value >= 0x80)
+		{
+			*ptr++ = static_cast<std::uint8_t>(value | 0x80);
+			value >>= 7;
+		}
+		*ptr++ = static_cast<std::uint8_t>(value);
+	}
+
+	static std::uint64_t get_varint(const std::uint8_t*& ptr)
+	{
+		std::uint64_t value = 0;
+		int shift = 0;
+		std::uint8_t byte;
+
+		do
+		{
+			byte = *ptr++;
+			value |= static_cast<std::uint64_t>(byte & 0x7F) << shift;
+			shift += 7;
+		}
+		while (byte & 0x80);
+
+		return value;
+	}
+
+public:
+	[[nodiscard]] bool empty() const { return notes_left == 0; }
+	[[nodiscard]] std::size_t size() const { return notes_left; }
+	[[nodiscard]] std::size_t bytes() const { return bytes_left; }
+
+	// works with any order of ticks, but only sorted ones give small deltas
+	void push(const NoteObject& note)
+	{
+		if (blocks.empty() || blocks.back().capacity - blocks.back().used < max_record_size)
+		{
+			// small streams stay small, big ones end up with big blocks
+			const auto capacity = std::clamp(bytes_pushed, min_block_size, max_block_size);
+			blocks.push_back({
+				std::unique_ptr<std::uint8_t[]>(new std::uint8_t[capacity]),
+				static_cast<std::uint32_t>(capacity),
+				0});
+		}
+
+		auto& last = blocks.back();
+		auto* const begin = last.data.get() + last.used;
+		auto* ptr = begin;
+
+		put_varint(ptr, note.tick - push_tick);
+		*ptr++ = note.key;
+		*ptr++ = note.velocity;
+		put_varint(ptr, note.length);
+		put_varint(ptr, note.track);
+		push_tick = note.tick;
+
+		const auto written = static_cast<std::size_t>(ptr - begin);
+		last.used += written;
+		bytes_pushed += written;
+		bytes_left += written;
+		notes_left++;
+	}
+
+	// returns false once every note has been read
+	bool pop(NoteObject& note)
+	{
+		if (!notes_left)
+			return false;
+
+		if (read_pos == blocks[read_block].used)
+		{
+			blocks[read_block].data.reset();
+			read_block++;
+			read_pos = 0;
+		}
+
+		const auto* const begin = blocks[read_block].data.get() + read_pos;
+		const auto* ptr = begin;
+
+		note.tick = (pop_tick += get_varint(ptr));
+		note.key = *ptr++;
+		note.velocity = *ptr++;
+		note.length = static_cast<std::uint32_t>(get_varint(ptr));
+		note.track = static_cast<track_n_t>(get_varint(ptr));
+
+		const auto read = static_cast<std::size_t>(ptr - begin);
+		read_pos += read;
+		bytes_left -= read;
+		notes_left--;
+		return true;
+	}
+};
+
 struct OverlapsRemover
 {
+	// raw notes are collected into chunks of this size, then sorted and packed into a run
+	static constexpr std::size_t chunk_size = 1 << 18;
+	static constexpr std::size_t read_buffer_size = 1 << 22;
+	// runs get folded into the survivors once they take at least this much space...
+	static constexpr std::size_t min_runs_bytes = 16 << 20;
+	// ...and at least 1/N of the space the survivors take
+	static constexpr std::size_t survivors_to_runs_ratio = 2;
+
 	parameter_t rsb_byte;
 	std::uint16_t ppq_value;
 	track_n_t current_track;
 
-	btree::multiset<NoteObject> note_set;
-	btree::map<track_n_t, btree::multiset<RawEvent>> mapped_notes_set;
+	// notes which survived so far, ordered by (tick, key, insertion order)
+	note_stream note_set;
+	// notes pushed since the last compaction:
+	// each run is sorted by (tick, key), the runs themselves follow insertion order
+	std::vector<note_stream> runs;
+	std::size_t runs_bytes;
+	// the newest notes, in insertion order
+	std::vector<NoteObject> chunk;
+	std::vector<NoteObject> chunk_buffer;
 
 	// the first 128 is the first channel, next 128 are the second...
 	std::array<std::vector<local_uint_t>, 2048> poly;
@@ -133,6 +247,7 @@ struct OverlapsRemover
 		rsb_byte(0),
 		ppq_value(0),
 		current_track(0),
+		runs_bytes(0),
 		file_input(nullptr)
 	{}
 
@@ -146,15 +261,12 @@ struct OverlapsRemover
 	void clear_polyphony()
 	{
 		for (auto& polyphony_stack: poly)
-		{
 			polyphony_stack.clear();
-			polyphony_stack.reserve(1024);
-		}
 	}
 
 	void initialize(const std_unicode_string& link)
 	{
-		file_input = new bbb_ffr(link.c_str());
+		file_input = new bbb_ffr(link.c_str(), read_buffer_size);
 		if (!quietest_mode)
 			std::print("File buffer size: {}\n", file_input->tell_bufsize());
 
@@ -171,7 +283,10 @@ struct OverlapsRemover
 			for (int i = 0; i < 2; i++)
 				ppq_value = (ppq_value << 8) | (file_input->get());
 
-			note_set.clear();
+			note_set = note_stream();
+			runs.clear();
+			runs_bytes = 0;
+			chunk.clear();
 			rsb_byte = 0;
 			current_track = 0;
 		}
@@ -220,39 +335,183 @@ struct OverlapsRemover
 			return;
 
 		total_count++;
-		if(velocity_mode)
-		{
-			if (event.velocity < min_velocity && event.key < 0xFF)
-				return;
-
-			pushed_count++;
-			note_set.insert(event);
+		if (velocity_mode && event.velocity < min_velocity && event.key < 0xFF)
 			return;
-		}
 
 		pushed_count++;
 
-		auto [ begin, end ] = note_set.equal_range(event);
-		if (!note_set.empty() && begin != note_set.end())
-		{
-			auto current_iter = begin;
-			const auto rightmost = *std::prev(end);
+		// overlaps are resolved later, in bulk, by compact()
+		chunk.push_back(event);
+		if (chunk.size() >= chunk_size)
+			flush_chunk();
+	}
 
-			while (current_iter != note_set.end() && !(*current_iter < rightmost) && !(rightmost < *current_iter))
+	void flush_chunk()
+	{
+		if (chunk.empty())
+			return;
+
+		sort_chunk();
+
+		note_stream run;
+		for (const auto& note : chunk)
+			run.push(note);
+		chunk.clear();
+
+		runs_bytes += run.bytes();
+		runs.push_back(std::move(run));
+
+		if (runs_bytes >= std::max(min_runs_bytes, note_set.bytes() / survivors_to_runs_ratio))
+			compact();
+	}
+
+	// Stable LSD radix sort by (tick, key), so notes of the same (tick, key) keep the order they were pushed in.
+	// Several times faster than std::stable_sort here, since ticks of a chunk span few bits.
+	void sort_chunk()
+	{
+		const auto [min_note, max_note] = std::ranges::minmax_element(chunk, {}, &NoteObject::tick);
+		const auto min_tick = min_note->tick;
+		const int key_bits = std::bit_width(max_note->tick - min_tick) + 8;
+
+		if (key_bits > 64)
+		{
+			std::stable_sort(chunk.begin(), chunk.end());
+			return;
+		}
+
+		const auto sort_key = [min_tick](const NoteObject& note)
+		{
+			return ((note.tick - min_tick) << 8) | note.key;
+		};
+
+		constexpr int digit_bits = 11;
+		constexpr std::uint64_t digit_mask = (1 << digit_bits) - 1;
+		std::array<std::size_t, 1 << digit_bits> offsets;
+
+		chunk_buffer.resize(chunk.size());
+
+		for (int shift = 0; shift < key_bits; shift += digit_bits)
+		{
+			offsets.fill(0);
+			for (const auto& note : chunk)
+				offsets[(sort_key(note) >> shift) & digit_mask]++;
+
+			// every note has the same digit here, nothing to move
+			if (offsets[(sort_key(chunk.front()) >> shift) & digit_mask] == chunk.size())
+				continue;
+
+			std::size_t offset = 0;
+			for (auto& count : offsets)
+				offset += std::exchange(count, offset);
+
+			for (const auto& note : chunk)
+				chunk_buffer[offsets[(sort_key(note) >> shift) & digit_mask]++] = note;
+
+			chunk.swap(chunk_buffer);
+		}
+	}
+
+	// pushes the notes of all runs against the survivors
+	void compact()
+	{
+		std::vector<note_stream*> inputs { &note_set };
+		for (auto& run : runs)
+			inputs.push_back(&run);
+
+		note_set = merge(inputs, !velocity_mode);
+		runs.clear();
+		runs_bytes = 0;
+	}
+
+	// removes notes of the group the new one overrides, then adds the new one;
+	// the same thing smart_push used to do against the whole note set
+	void fold_note(std::vector<NoteObject>& group, const NoteObject& note)
+	{
+		std::size_t kept = 0;
+		for (std::size_t i = 0; i < group.size(); i++)
+		{
+			if (priority_predicate(group[i], note))
 			{
-				if (!priority_predicate(*current_iter, event))
+				total_count--;
+				continue;
+			}
+
+			group[kept++] = group[i];
+		}
+
+		group.resize(kept);
+		group.push_back(note);
+	}
+
+	// Merges sorted streams into one; notes of the same (tick, key) follow the order of the inputs.
+	// With `fold`, the first input must hold survivors,
+	// and the notes of every other input get pushed against them one by one.
+	note_stream merge(const std::vector<note_stream*>& inputs, bool fold)
+	{
+		note_stream result;
+		std::vector<NoteObject> heads(inputs.size());
+		std::vector<std::size_t> heap;
+
+		// std heap keeps the "largest" element on top, so this puts the earliest head there
+		const auto heap_order = [&heads](std::size_t a, std::size_t b)
+		{
+			if (heads[b] < heads[a])
+				return true;
+
+			if (heads[a] < heads[b])
+				return false;
+
+			return b < a;
+		};
+
+		for (std::size_t i = 0; i < inputs.size(); i++)
+			if (inputs[i]->pop(heads[i]))
+				heap.push_back(i);
+
+		std::ranges::make_heap(heap, heap_order);
+
+		// notes of the current (tick, key)
+		std::vector<NoteObject> group;
+
+		while (!heap.empty())
+		{
+			std::ranges::pop_heap(heap, heap_order);
+			const auto index = heap.back();
+			heap.pop_back();
+
+			// keep taking notes from this input for as long as it stays ahead of all the others
+			bool has_more;
+			do
+			{
+				NoteObject note = heads[index];
+				has_more = inputs[index]->pop(heads[index]);
+
+				if (!group.empty() && (group.front() < note || note < group.front()))
 				{
-					++current_iter;
-					continue;
+					for (const auto& grouped : group)
+						result.push(grouped);
+
+					group.clear();
 				}
 
-				current_iter = note_set.erase(current_iter);
+				if (fold && index != 0)
+					fold_note(group, note);
+				else
+					group.push_back(note);
+			}
+			while (has_more && (heap.empty() || heap_order(heap.front(), index)));
 
-				total_count--;
+			if (has_more)
+			{
+				heap.push_back(index);
+				std::ranges::push_heap(heap, heap_order);
 			}
 		}
 
-		note_set.insert(event);
+		for (const auto& grouped : group)
+			result.push(grouped);
+
+		return result;
 	}
 
 	[[nodiscard]] std::uint32_t read_vlv() const
@@ -420,6 +679,7 @@ struct OverlapsRemover
 				event.track = 0;
 				event.tick = current_tick;
 				event.length = tempo_data;
+				event.velocity = 0;
 
 				smart_push(event);
 			}
@@ -450,7 +710,14 @@ struct OverlapsRemover
 		return true;
 	}
 
-	void single_pass_filter()
+	struct OutputTrack
+	{
+		note_stream notes;
+		std::size_t events_count = 0;
+	};
+
+	// splits the survivors by track, keeping their order
+	std::vector<std::unique_ptr<OutputTrack>> single_pass_filter()
 	{
 		constexpr local_uint_t log_trigger = 5000000;
 		local_uint_t dump_counter = 0;
@@ -460,55 +727,160 @@ struct OverlapsRemover
 
 		local_uint_t _counter = 0;
 
-		auto iter = note_set.begin();
-		while (iter != note_set.end())
+		// indexed by track number
+		std::vector<std::unique_ptr<OutputTrack>> tracks;
+
+		NoteObject note;
+		while (note_set.pop(note))
 		{
-			RawEvent event;
-			auto& note = *iter;
-			auto& track_ref = mapped_notes_set[note.track];
+			if (note.track >= tracks.size())
+				tracks.resize(note.track + 1);
+
+			auto& track = tracks[note.track];
+			if (!track)
+				track = std::make_unique<OutputTrack>();
+
+			track->notes.push(note);
 
 			if (note.key == 0xFF)
 			{
-				event.tick = note.tick;
-				event.a = 0x03;
-				event.b = (note.length & 0xFF0000) >> 16;
-				event.c = (note.length & 0xFF00) >> 8;
-				event.d = (note.length & 0xFF);
-				track_ref.insert(event);
+				track->events_count++;
+				continue;
 			}
-			else
+
+			// Note ON and Note OFF events
+			track->events_count += 2;
+
+			_counter++;
+			if (_counter >= log_trigger)
 			{
-				// Note ON event
-				event.tick = note.tick;
-				event.a = 0;
-				event.b = 0x90 | (note.track & 0xF);
-				event.c = note.key;
-				event.d = ((note.velocity) ? note.velocity : 1);
-				track_ref.insert(event);
+				// damn tdm gcc ...
+				if (!quiet_mode)
+					std::print("Single pass scan: {} notes put\n", dump_counter + _counter);
 
-				// Note OFF event
-				event.tick += note.length;
-				event.b ^= 0x10;
-				event.d = 0x40;
-				track_ref.insert(event);
-
-				_counter++;
-				if (_counter >= log_trigger)
-				{
-					// damn tdm gcc ...
-					if (!quiet_mode)
-						std::print("Single pass scan: {} notes put\n", dump_counter + _counter);
-
-					dump_counter += _counter;
-					_counter = 0;
-				}
+				dump_counter += _counter;
+				_counter = 0;
 			}
-			iter = note_set.erase(iter);
 		}
-		note_set.clear();
+		note_set = note_stream();
 
 		if (!quietest_mode)
 			std::print("Single pass scan has finished... Note count: {}\n", dump_counter + _counter);
+
+		return tracks;
+	}
+
+	// Converts the notes of a single track back to MIDI events and writes them out.
+	// Note offs wait in a heap until their tick comes, which gives the same event order
+	// the old per-track multisets had: by tick, then by the order the events were added in.
+	static void write_track(note_stream& notes, std::ostream& fout)
+	{
+		struct NoteOff
+		{
+			smallest_tick_t tick;
+			std::size_t order;
+			std::uint8_t status;
+			std::uint8_t key;
+		};
+
+		// std heap keeps the "largest" element on top, so this puts the earliest note off there
+		const auto later = [](const NoteOff& a, const NoteOff& b)
+		{
+			if (a.tick != b.tick)
+				return a.tick > b.tick;
+
+			return a.order > b.order;
+		};
+
+		constexpr std::size_t flush_size = 1 << 20;
+
+		std::vector<NoteOff> note_offs;
+		std::vector<std::uint8_t> track_data;
+		smallest_tick_t previous_tick = 0;
+		std::uint64_t track_size = 0;
+
+		const auto flush = [&]()
+		{
+			ostream_write(track_data, fout);
+			track_size += track_data.size();
+			track_data.clear();
+		};
+
+		const auto push_delta = [&](smallest_tick_t tick)
+		{
+			const std::uint32_t tTick = tick - previous_tick;
+			push_vlv(tTick, track_data);
+			previous_tick = tick;
+		};
+
+		const auto push_note_offs = [&](smallest_tick_t until)
+		{
+			while (!note_offs.empty() && note_offs.front().tick <= until)
+			{
+				std::ranges::pop_heap(note_offs, later);
+				const auto& note_off = note_offs.back();
+
+				push_delta(note_off.tick);
+				track_data.push_back(note_off.status);
+				track_data.push_back(note_off.key);
+				track_data.push_back(0x40);
+
+				note_offs.pop_back();
+			}
+		};
+
+		// the size is not known yet, it gets patched in at the end
+		const auto header_pos = fout.tellp();
+		fout.write("MTrk\0\0\0\0", 8);
+
+		std::size_t order = 0;
+		NoteObject note;
+		while (notes.pop(note))
+		{
+			push_note_offs(note.tick);
+			push_delta(note.tick);
+
+			if (note.key == 0xFF)
+			{
+				track_data.push_back(0xFF);
+				track_data.push_back(0x51);
+				track_data.push_back(0x03);
+				track_data.push_back((note.length & 0xFF0000) >> 16);
+				track_data.push_back((note.length & 0xFF00) >> 8);
+				track_data.push_back(note.length & 0xFF);
+			}
+			else
+			{
+				const std::uint8_t channel = note.track & 0xF;
+
+				track_data.push_back(0x90 | channel);
+				track_data.push_back(note.key);
+				track_data.push_back((note.velocity) ? note.velocity : 1);
+
+				note_offs.push_back({note.tick + note.length, order++, static_cast<std::uint8_t>(0x80 | channel), note.key});
+				std::ranges::push_heap(note_offs, later);
+			}
+
+			if (track_data.size() >= flush_size)
+				flush();
+		}
+
+		push_note_offs(std::numeric_limits<smallest_tick_t>::max());
+
+		track_data.push_back(0x00);
+		track_data.push_back(0xFF);
+		track_data.push_back(0x2F);
+		track_data.push_back(0x00);
+		flush();
+
+		const std::uint32_t size = track_size;
+		const auto end_pos = fout.tellp();
+		fout.seekp(header_pos + std::streamoff(4));
+		fout.put(static_cast<char>((size & 0xFF000000) >> 24));
+		fout.put(static_cast<char>((size & 0xFF0000) >> 16));
+		fout.put(static_cast<char>((size & 0xFF00) >> 8));
+		fout.put(static_cast<char>(size & 0xFF));
+		fout.seekp(end_pos);
 	}
 
 	static uint8_t push_vlv(uint32_t value, std::vector<std::uint8_t>& vec)
@@ -540,13 +912,11 @@ struct OverlapsRemover
 		if (!quietest_mode)
 			std::print("Starting enhanced output algorithm\n");
 
-		single_pass_filter();
+		auto tracks = single_pass_filter();
 
-		size_t tracks_count = mapped_notes_set.size();
+		size_t tracks_count = std::ranges::count_if(tracks, [](const auto& track) { return track != nullptr; });
 		if (!quietest_mode)
-			std::print("Tracks used: {}\n", mapped_notes_set.size());
-
-		std::vector<std::uint8_t> track_data;
+			std::print("Tracks used: {}\n", tracks_count);
 
 		if (save_path_override.empty())
 		{
@@ -581,70 +951,22 @@ struct OverlapsRemover
 		fout.put(static_cast<char>(ppq_value >> 8));
 		fout.put(static_cast<char>(ppq_value & 0xFF));
 
-		auto note_maps_iter = mapped_notes_set.begin();
-		while (note_maps_iter != mapped_notes_set.end())
+		for (std::size_t track_id = 0; track_id < tracks.size(); track_id++)
 		{
-			track_data.push_back('M');
-			track_data.push_back('T');
-			track_data.push_back('r');
-			track_data.push_back('k');
-			track_data.push_back(0); // size
-			track_data.push_back(0); // of
-			track_data.push_back(0); // track
-			track_data.push_back(0); // placeholder
+			auto& track = tracks[track_id];
+			if (!track)
+				continue;
 
 			if (!quiet_mode)
 				std::print("Current track size: {}\n"
 					"\tConverting track back to MIDI standard\n",
-					note_maps_iter->second.size());
+					track->events_count);
 
-			smallest_tick_t previous_tick = 0;
-			auto iter = note_maps_iter->second.begin();
-			while (iter != note_maps_iter->second.end())
-			{
-				const auto& event = *iter;
-				const std::uint32_t tTick = event.tick - previous_tick;
-
-				/*auto length = */push_vlv(tTick, track_data);
-				if (event.a == 0x03)
-				{
-					track_data.push_back(0xFF);
-					track_data.push_back(0x51);
-					track_data.push_back(0x03);
-					track_data.push_back(event.b);
-					track_data.push_back(event.c);
-					track_data.push_back(event.d);
-				}
-				else
-				{
-					track_data.push_back(event.b);
-					track_data.push_back(event.c);
-					track_data.push_back(event.d);
-				}
-
-				previous_tick = event.tick;
-				++iter; //= pMS->erase(U);
-			}
-			note_maps_iter->second.clear();
-
-			track_data.push_back(0x00);
-			track_data.push_back(0xFF);
-			track_data.push_back(0x2F);
-			track_data.push_back(0x00);
-
-			std::uint32_t size = track_data.size() - 8;
-			track_data[4] = (size & 0xFF000000) >> 24;
-			track_data[5] = (size & 0xFF0000) >> 16;
-			track_data[6] = (size & 0xFF00) >> 8;
-			track_data[7] = (size & 0xFF);
-			ostream_write(track_data, fout);
+			write_track(track->notes, fout);
+			track.reset();
 
 			if (dbg && !quiet_mode)
-				std::print("Track {} went to output\n", note_maps_iter->first);
-
-			track_data.clear();
-
-			++note_maps_iter;
+				std::print("Track {} went to output\n", track_id);
 		}
 
 		fout.flush();
@@ -656,77 +978,49 @@ struct OverlapsRemover
 			return;
 
 		// Group notes by key in a single pass - O(n) instead of O(128*n)
-		std::array<std::vector<TrackSymbol>, 128> notes_by_key;
+		std::array<note_stream, 128> notes_by_key;
+		// Keep tempo events (key == 0xFF) and other special events
+		note_stream other_events;
 
-		auto iter = note_set.begin();
-		while (iter != note_set.end())
+		NoteObject note;
+		while (note_set.pop(note))
 		{
-			if (iter->key >= 128)
-			{
-				// Keep tempo events (key == 0xFF) and other special events
-				++iter;
-				continue;
-			}
-
-			const auto key = iter->key;
-
-			TrackSymbol insertable;
-			insertable.tick = iter->tick;
-			insertable.track = iter->track;
-			insertable.length = iter->length;
-			insertable.velocity = iter->velocity;
-
-			notes_by_key[key].push_back(insertable);
-			iter = note_set.erase(iter);
+			if (note.key < 128)
+				notes_by_key[note.key].push(note);
+			else
+				other_events.push(note);
 		}
+		note_set = note_stream();
 
 		if (!quiet_mode)
 			std::print("Single-pass grouping complete\n");
 
-		// Event structure for sparse processing
-		struct SparseEvent
+		struct NoteEnd
 		{
 			local_uint_t tick;
-			std::uint32_t order;    // preserves original processing order for same-tick events
-			bool is_start;          // true = note-on, false = note-off
-			std::uint32_t track;
-			std::uint8_t velocity;
-			local_uint_t start_tick; // original note's start tick
+			std::uint32_t order;
 		};
 
-		std::vector<SparseEvent> events;
+		// std heap keeps the "largest" element on top, so this puts the earliest end there
+		const auto later = [](const NoteEnd& a, const NoteEnd& b)
+		{
+			if (a.tick != b.tick)
+				return a.tick > b.tick;
+
+			return a.order > b.order;
+		};
+
+		std::vector<NoteEnd> note_ends;
+		std::array<note_stream, 128> remapped;
 
 		for (int key = 0; key < 128; key++)
 		{
-			auto& key_vector = notes_by_key[key];
-			if (key_vector.empty())
+			auto& key_notes = notes_by_key[key];
+			if (key_notes.empty())
 				continue;
 
 			if (!quiet_mode)
-				std::print("Processing key {} with {} notes (sparse)\n", key, key_vector.size());
-
-			// Build events from notes
-			events.clear();
-			events.reserve(key_vector.size() * 2);
-
-			std::uint32_t order = 0;
-			for (const auto& n : key_vector)
-			{
-				events.push_back({n.tick, order, true, n.track, n.velocity, n.tick});
-				events.push_back({n.tick + n.length, order, false, n.track, 0, n.tick});
-				++order;
-			}
-
-			key_vector.clear();
-			// key_vector.shrink_to_fit();
-
-			std::ranges::sort(events, [](const SparseEvent& a, const SparseEvent& b)
-			{
-				if (a.tick != b.tick) return a.tick < b.tick;
-				if (a.order != b.order) return a.order < b.order;
-				if (a.is_start != b.is_start) return a.is_start; // start before end for same note
-				return false;
-			});
+				std::print("Processing key {} with {} notes (sparse)\n", key, key_notes.size());
 
 			// Match the original dense implementation: later notes in the per-key stream
 			// overwrite earlier ones for every covered tick.
@@ -753,30 +1047,45 @@ struct OverlapsRemover
 				return {it->first, it->second.first, it->second.second};
 			};
 
-			std::size_t event_index = 0;
-			while (event_index < events.size())
+			// Note starts come straight from the stream, which is ordered by (tick, order);
+			// note ends wait in a heap until their tick comes.
+			std::uint32_t order = 0;
+			NoteObject next;
+			bool has_next = key_notes.pop(next);
+			note_ends.clear();
+
+			while (has_next || !note_ends.empty())
 			{
-				const auto tick = events[event_index].tick;
+				const auto tick = (!note_ends.empty() && (!has_next || note_ends.front().tick < next.tick)) ?
+					note_ends.front().tick :
+					next.tick;
+
 				std::uint32_t started_owner_order = 0;
 				bool has_started_owner = false;
 				uint8_t max_vel = 0;
 
-				while (event_index < events.size() && events[event_index].tick == tick)
+				// Taking every start of a tick before its ends leaves the same state behind
+				// as going through them sorted by (order, start before end) does.
+				while (has_next && next.tick == tick)
 				{
-					const auto& e = events[event_index];
+					active[order] = {next.track, next.velocity};
+					started_owner_order = order;
+					has_started_owner = true;
 
-					if (e.is_start)
-					{
-						active[e.order] = {e.track, e.velocity};
-						started_owner_order = e.order;
-						has_started_owner = true;
+					max_vel = max_vel < next.velocity ? next.velocity : max_vel;
 
-						max_vel = max_vel < e.velocity ? e.velocity : max_vel;
-					}
-					else
-						active.erase(e.order);
+					note_ends.push_back({next.tick + next.length, order});
+					std::ranges::push_heap(note_ends, later);
 
-					++event_index;
+					++order;
+					has_next = key_notes.pop(next);
+				}
+
+				while (!note_ends.empty() && note_ends.front().tick == tick)
+				{
+					active.erase(note_ends.front().order);
+					std::ranges::pop_heap(note_ends, later);
+					note_ends.pop_back();
 				}
 
 				const auto owner = get_owner();
@@ -795,13 +1104,13 @@ struct OverlapsRemover
 					// Emit previous segment if valid
 					if (segment_track != 0 && tick > segment_start)
 					{
-						NoteObject note;
-						note.key = key;
-						note.tick = segment_start;
-						note.length = tick - segment_start;
-						note.track = segment_track;
-						note.velocity = segment_velocity;
-						note_set.insert(note);
+						NoteObject segment;
+						segment.key = key;
+						segment.tick = segment_start;
+						segment.length = tick - segment_start;
+						segment.track = segment_track;
+						segment.velocity = segment_velocity;
+						remapped[key].push(segment);
 					}
 
 					segment_start = tick;
@@ -815,6 +1124,14 @@ struct OverlapsRemover
 			if (!quiet_mode)
 				std::print("Key {} processed in sustains removing algorithm (sparse)\n", key);
 		}
+
+		// segments of a key never share a tick, so this restores (tick, key) order unambiguously
+		std::vector<note_stream*> inputs;
+		for (auto& key_notes : remapped)
+			inputs.push_back(&key_notes);
+		inputs.push_back(&other_events);
+
+		note_set = merge(inputs, false);
 	}
 
 	void process(const std_unicode_string& path, const std_unicode_string& save_path_override)
@@ -833,6 +1150,18 @@ struct OverlapsRemover
 		}
 
 		file_input->close();
+
+		// neither the read buffer nor the polyphony stacks are needed anymore
+		delete file_input;
+		file_input = nullptr;
+		for (auto& polyphony_stack : poly)
+			std::vector<local_uint_t>().swap(polyphony_stack);
+
+		flush_chunk();
+		if (!runs.empty())
+			compact();
+		std::vector<NoteObject>().swap(chunk);
+		std::vector<NoteObject>().swap(chunk_buffer);
 
 		if (dbg && !quietest_mode)
 			std::print("Load finished with set size of {}...\n", note_set.size());
