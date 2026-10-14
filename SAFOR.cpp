@@ -39,6 +39,9 @@ constexpr local_uint_t VELOCITY_MASK = 0xFFFFFFFFFFFFFFULL;
 constexpr std::uint32_t MTHD = 1297377380;
 constexpr std::uint32_t MTRK = 1297379947;
 
+namespace
+{
+
 // todo: pipe mode;
 bool pipe_mode = false;
 
@@ -393,9 +396,14 @@ struct OverlapsRemover
 				event_header = rsb_byte;
 			}
 			else if (event_header >= 0x80 && event_header < 0xF0)
+			{
 				first_param = *ptr++;
+			}
 			else
+			{
 				byte |= 0x80; // meta, sysex or invalid data
+				first_param = 0;
+			}
 
 			if (byte & 0x80)
 			{
@@ -538,7 +546,7 @@ struct OverlapsRemover
 
 	// removes notes of the group the new one overrides, then adds the new one;
 	// the same thing smart_push used to do against the whole note set
-	void fold_note(std::vector<NoteObject>& group, const NoteObject& note)
+	static void fold_note(std::vector<NoteObject>& group, const NoteObject& note)
 	{
 		std::size_t kept = 0;
 		for (std::size_t i = 0; i < group.size(); i++)
@@ -578,8 +586,10 @@ struct OverlapsRemover
 		};
 
 		for (std::size_t i = 0; i < inputs.size(); i++)
+		{
 			if (inputs[i]->pop(heads[i]))
 				heap.push_back(i);
+		}
 
 		std::ranges::make_heap(heap, heap_order);
 
@@ -750,10 +760,12 @@ struct OverlapsRemover
 		else
 		{
 			if (!quietest_mode)
+			{
 				std::cerr << "Invalid data\n\tat: " <<
 					static_cast<unsigned int>(rsb_byte) << "; " <<
 					static_cast<unsigned int>(event_header) << "; "
 					"at 0x" << std::hex << file_input->tellg() << std::dec << std::endl ;
+			}
 
 			// bruh;
 			std::uint8_t I = 0, II = 0, III = 0;
@@ -935,7 +947,9 @@ struct OverlapsRemover
 
 		const std::uint32_t size = track_size;
 		const auto end_pos = fout.tellp();
-		fout.seekp(header_pos + std::streamoff(4));
+
+		fout.seekp(header_pos + static_cast<std::streamoff>(4));
+
 		fout.put(static_cast<char>((size & 0xFF000000) >> 24));
 		fout.put(static_cast<char>((size & 0xFF0000) >> 16));
 		fout.put(static_cast<char>((size & 0xFF00) >> 8));
@@ -1018,9 +1032,11 @@ struct OverlapsRemover
 				continue;
 
 			if (!quiet_mode)
+			{
 				std::print("Current track size: {}\n"
 					"\tConverting track back to MIDI standard\n",
 					track->events_count);
+			}
 
 			write_track(track->notes, fout);
 			track.reset();
@@ -1220,6 +1236,7 @@ struct OverlapsRemover
 		flush_chunk();
 		if (!runs.empty())
 			compact();
+
 		std::vector<NoteObject>().swap(chunk);
 		std::vector<NoteObject>().swap(chunk_buffer);
 
@@ -1450,9 +1467,11 @@ int main__cli_runtime(int argc, char** &argv)
 	return 0;
 }
 
-int main(int argc, char** argv)
+}
+
+int main(const int argc, char** argv)
 {
-	int result = main__cli_runtime(argc, argv);
+	const int result = main__cli_runtime(argc, argv);
 	if (result != GRACEFUL_DENY)
 		return result;
 
