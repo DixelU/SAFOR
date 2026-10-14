@@ -254,6 +254,20 @@ public:
 		return 0;
 	}
 
+	// bytes already buffered after the current position, for parsers which can do without get() for every byte
+	const unsigned char* buffered_data(size_t& available) const
+	{
+		available = (is_open && !is_eof && inner_buffer_pos < buffer_size) ? buffer_size - inner_buffer_pos : 0;
+		return buffer + inner_buffer_pos;
+	}
+
+	// moves past bytes taken through buffered_data()
+	void skip_buffered(size_t count)
+	{
+		inner_buffer_pos += count;
+		file_pos += count;
+	}
+
 	void close()
 	{
 		if (is_open)

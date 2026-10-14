@@ -321,12 +321,125 @@ struct OverlapsRemover
 
 		while (file_input->good())
 		{
+			parse_buffered_events(current_tick);
+
+			// whatever comes next goes byte by byte
 			delta_time = read_vlv();
 			if (!parse_event(current_tick += delta_time))
 				return true;
 		}
 
 		return false;
+	}
+
+	// pairs a note off with the latest note on of its key/channel, and pushes the resulting note
+	void release_note(std::uint8_t status, std::uint8_t key, local_uint_t current_tick)
+	{
+		//position of stack for this key/channel pair
+		auto& polyphony_stack = poly[((status & 0x0F) << 7) | key];
+		if (polyphony_stack.empty())
+		{
+			// log something here?
+			return;
+		}
+
+		const auto note_on_data = polyphony_stack.back();
+		polyphony_stack.pop_back();
+
+		NoteObject note;
+		note.key = key;
+		note.track = (status & 0x0F) | ((current_track) << 4);
+		note.tick = note_on_data & VELOCITY_MASK;
+		note.length = current_tick - note.tick;
+		note.velocity = note_on_data >> 56;
+
+		smart_push(note);
+	}
+
+	// Decodes channel events straight from the read buffer, without going through get() for every byte.
+	// Stops at meta and sysex events, malformed data and the end of the buffer,
+	// leaving those to read_vlv() and parse_event(), so the result is the same as going byte by byte.
+	void parse_buffered_events(local_uint_t& current_tick)
+	{
+		// the longest event handled here: 4 bytes of delta time + status + 2 parameters
+		constexpr std::ptrdiff_t max_event_size = 7;
+
+		std::size_t available = 0;
+		const std::uint8_t* const begin = file_input->buffered_data(available);
+		const std::uint8_t* const end = begin + available;
+		const std::uint8_t* ptr = begin;
+
+		while (end - ptr >= max_event_size)
+		{
+			const auto event_begin = ptr;
+
+			std::uint32_t delta_time = 0;
+			std::uint8_t byte;
+			int vlv_length = 0;
+			do
+			{
+				byte = *ptr++;
+				delta_time = (delta_time << 7) | (byte & 0x7F);
+			}
+			while ((byte & 0x80) && ++vlv_length < 4);
+
+			std::uint8_t event_header = *ptr++;
+			std::uint8_t first_param;
+
+			// RSB handling
+			if (event_header < 0x80 && rsb_byte >= 0x80)
+			{
+				first_param = event_header;
+				event_header = rsb_byte;
+			}
+			else if (event_header >= 0x80 && event_header < 0xF0)
+				first_param = *ptr++;
+			else
+				byte |= 0x80; // meta, sysex or invalid data
+
+			if (byte & 0x80)
+			{
+				ptr = event_begin;
+				break;
+			}
+
+			current_tick += delta_time;
+			rsb_byte = event_header;
+
+			switch (event_header >> 4)
+			{
+			case 0x8:
+				note_count++;
+				// aftertouch doesn't matter
+				ptr++;
+				release_note(event_header, first_param & 0x7F, current_tick);
+				break;
+
+			case 0x9:
+			{
+				const std::uint8_t key = first_param & 0x7F;
+				const std::uint8_t volume = *ptr++ & 0x7F;
+
+				if (volume != 0)
+					poly[((event_header & 0x0F) << 7) | key].push_back(current_tick | (static_cast<local_uint_t>(volume) << 56));
+				else
+					release_note(event_header, key, current_tick);
+
+				break;
+			}
+
+			case 0xA:
+			case 0xB:
+			case 0xE:
+				ptr++;
+				break;
+
+			default: // 0xC, 0xD
+				break;
+			}
+		}
+
+		file_input->skip_buffered(ptr - begin);
 	}
 
 	void smart_push(const NoteObject& event)
@@ -532,21 +645,6 @@ struct OverlapsRemover
 		return value;
 	}
 
-	local_uint_t pop_note_on(smallest_tick_t pos, local_uint_t requested_data)
-	{
-		if (poly[pos].empty())
-		{
-			// current tick with volume = 1
-			return requested_data | (VELOCITY_MASK + 1);
-		}
-
-		// isn't it the opposite?
-		const auto data = poly[pos].back();
-		poly[pos].pop_back();
-
-		return data;
-	}
-
 	// returns whether the current track can be read further
 	bool parse_event(local_uint_t current_tick)
 	{
@@ -570,31 +668,10 @@ struct OverlapsRemover
 			rsb_byte = event_header;
 			note_count++;
 
-			const auto key = first_param & 0x7F;
-
-			//position of stack for this key/channel pair
-			const auto pos = ((rsb_byte & 0x0F) << 7) | key;
-
 			// aftertouch doesn't matter
 			file_input->get();
 
-			NoteObject note;
-			note.key = key;
-			note.track = (rsb_byte & 0x0F) | ((current_track) << 4);
-			if (poly[pos].empty())
-			{
-				// log something here?
-				return true;
-			}
-
-			const auto note_on_data =
-				pop_note_on(pos, current_tick);
-
-			note.tick = note_on_data & VELOCITY_MASK;
-			note.length = current_tick - note.tick;
-			note.velocity = note_on_data >> 56;
-
-			smart_push(note);
+			release_note(rsb_byte, first_param & 0x7F, current_tick);
 		}
 		else if (event_header >= 0x90 && event_header <= 0x9F)
 		{
@@ -613,24 +690,7 @@ struct OverlapsRemover
 			}
 
 			// otherwise this is a note off event
-			NoteObject note;
-			note.key = key;
-			note.track = (rsb_byte & 0x0F) | ((current_track) << 4);
-
-			if (poly[pos].empty())
-			{
-				// log something here?
-				return true;
-			}
-
-			const auto note_on_data =
-				pop_note_on(pos, current_tick);
-
-			note.tick = note_on_data & VELOCITY_MASK;
-			note.length = current_tick - note.tick;
-			note.velocity = note_on_data >> 56;
-
-			smart_push(note);
+			release_note(rsb_byte, key, current_tick);
 		}
 		else if ((event_header >= 0xA0 && event_header <= 0xBF) || (event_header >= 0xE0 && event_header <= 0xEF))
 		{
